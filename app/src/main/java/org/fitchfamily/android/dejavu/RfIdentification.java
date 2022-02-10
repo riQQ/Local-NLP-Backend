@@ -23,8 +23,6 @@ package org.fitchfamily.android.dejavu;
  * Created by tfitch on 10/4/17.
  */
 
-import org.fitchfamily.android.dejavu.RfEmitter.EmitterType;
-
 import java.math.BigInteger;
 import java.security.*;
 import android.support.annotation.NonNull;

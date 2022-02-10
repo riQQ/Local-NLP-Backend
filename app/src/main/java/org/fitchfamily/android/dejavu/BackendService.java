@@ -501,7 +501,7 @@ public class BackendService extends LocationBackendService {
                                 id.getPci() + "/" + id.getTac();
                         int asu = (info.getCellSignalStrength().getAsuLevel() * MAXIMUM_ASU) / 97;
 
-                        Observation o = new Observation(idStr, RfEmitter.EmitterType.MOBILE);
+                        Observation o = new Observation(idStr, EmitterType.MOBILE);
                         o.setAsu(asu);
                         observations.add(o);
                         if (DEBUG)
@@ -526,7 +526,7 @@ public class BackendService extends LocationBackendService {
                                 mnc + "/" + id.getLac() + "/" +
                                 id.getCid();
                         int asu = info.getCellSignalStrength().getAsuLevel();
-                        Observation o = new Observation(idStr, RfEmitter.EmitterType.MOBILE);
+                        Observation o = new Observation(idStr, EmitterType.MOBILE);
                         o.setAsu(asu);
                         observations.add(o);
                         if (DEBUG)
@@ -551,7 +551,7 @@ public class BackendService extends LocationBackendService {
                                 mnc + "/" + id.getLac() + "/" +
                                 id.getCid();
                         int asu = info.getCellSignalStrength().getAsuLevel();
-                        Observation o = new Observation(idStr, RfEmitter.EmitterType.MOBILE);
+                        Observation o = new Observation(idStr, EmitterType.MOBILE);
                         o.setAsu(asu);
                         observations.add(o);
                         if (DEBUG)
@@ -571,7 +571,7 @@ public class BackendService extends LocationBackendService {
                         String idStr = "CDMA" + "/" + id.getNetworkId() + "/" +
                                 id.getSystemId() + "/" + id.getBasestationId();
                         int asu = info.getCellSignalStrength().getAsuLevel();
-                        Observation o = new Observation(idStr, RfEmitter.EmitterType.MOBILE);
+                        Observation o = new Observation(idStr, EmitterType.MOBILE);
                         o.setAsu(asu);
                         observations.add(o);
                         if (DEBUG)
@@ -630,7 +630,7 @@ public class BackendService extends LocationBackendService {
                     mnc + "/" + info.getLac() + "/" +
                     info.getCid();
 
-            Observation o = new Observation(idStr, RfEmitter.EmitterType.MOBILE);
+            Observation o = new Observation(idStr, EmitterType.MOBILE);
             o.setAsu(MINIMUM_ASU);
             observations.add(o);
 
@@ -647,7 +647,7 @@ public class BackendService extends LocationBackendService {
                                 mnc + "/" + neighbor.getLac() + "/" +
                                 neighbor.getCid();
 
-                        Observation o = new Observation(idStr, RfEmitter.EmitterType.MOBILE);
+                        Observation o = new Observation(idStr, EmitterType.MOBILE);
                         o.setAsu(neighbor.getRssi());
                         observations.add(o);
                     }
@@ -706,9 +706,9 @@ public class BackendService extends LocationBackendService {
                 Log.d(TAG,"onWiFisChanged(): "+scanResults.size()+" scan results");
             for (ScanResult sr : scanResults) {
                 String bssid = sr.BSSID.toLowerCase(Locale.US).replace(".", ":");
-                RfEmitter.EmitterType rftype = RfEmitter.EmitterType.WLAN_24GHZ;
+                EmitterType rftype = EmitterType.WLAN_24GHZ;
                 if (is5GHz(sr))
-                    rftype = RfEmitter.EmitterType.WLAN_5GHZ;
+                    rftype = EmitterType.WLAN_5GHZ;
                 if (DEBUG)
                     Log.d(TAG,"rfType="+rftype.toString()+", ScanResult="+sr.toString());
                 if (bssid != null) {
@@ -1050,11 +1050,11 @@ public class BackendService extends LocationBackendService {
         if (weightedAverageLocation != null) {
             emitterCache.sync();        // getExpected() ends bypassing the cache, so sync first
 
-            for (RfEmitter.EmitterType etype : RfEmitter.EmitterType.values()) {
+            for (EmitterType etype : EmitterType.values()) {
                 expectedSet.addAll(getExpected(weightedAverageLocation, etype));
             }
             if (gpsLocation != null) {
-                for (RfEmitter.EmitterType etype : RfEmitter.EmitterType.values()) {
+                for (EmitterType etype : EmitterType.values()) {
                     expectedSet.addAll(getExpected(gpsLocation.getLocation(), etype));
                 }
             }
@@ -1087,12 +1087,11 @@ public class BackendService extends LocationBackendService {
      *               box.
      * @return A set of IDs for the RF emitters we should expect in this location.
      */
-    private Set<RfIdentification> getExpected(Location loc, RfEmitter.EmitterType rfType) {
-        RfEmitter.RfCharacteristics rfChar = RfEmitter.getRfCharacteristics(rfType);
-        if ((loc == null) || (loc.getAccuracy() > rfChar.typicalRange))
+    private Set<RfIdentification> getExpected(Location loc, EmitterType rfType) {
+        RfCharacteristics rfChar = RfEmitter.Companion.getRfCharacteristics(rfType);
+        if ((loc == null) || (loc.getAccuracy() > rfChar.getTypicalRange()))
             return new HashSet<>();
-        BoundingBox bb = new BoundingBox(loc.getLatitude(), loc.getLongitude(), rfChar.typicalRange);
+        BoundingBox bb = new BoundingBox(loc.getLatitude(), loc.getLongitude(), rfChar.getTypicalRange());
         return emitterCache.getEmitters(rfType, bb);
     }
 }
-

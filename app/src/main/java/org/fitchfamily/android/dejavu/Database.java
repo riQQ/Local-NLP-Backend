@@ -23,6 +23,8 @@ package org.fitchfamily.android.dejavu;
  * Created by tfitch on 9/1/17.
  */
 
+import static org.fitchfamily.android.dejavu.RfEmitterKt.typeOf;
+
 import android.content.Context;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
@@ -37,7 +39,7 @@ import java.util.HashSet;
  * thread safe. However all access to the database is through the Cache object
  * which is thread safe.
  */
-class Database extends SQLiteOpenHelper {
+public class Database extends SQLiteOpenHelper {
     private static final String TAG = "DejaVu DB";
 
     private static final int VERSION = 3;
@@ -187,8 +189,8 @@ class Database extends SQLiteOpenHelper {
                     String rfId = cursor.getString(0);
                     String rftype = cursor.getString(1);
                     if (rftype.equals("WLAN"))
-                        rftype = RfEmitter.EmitterType.WLAN_24GHZ.toString();
-                    RfIdentification rfid = new RfIdentification(rfId, RfEmitter.typeOf(rftype));
+                        rftype = EmitterType.WLAN_24GHZ.toString();
+                    RfIdentification rfid = new RfIdentification(rfId, typeOf(rftype));
                     String hash = rfid.getUniqueId();
 
                     // Log.d(TAG,"upGradeToVersion2(): Updating '"+rfId.toString()+"'");
@@ -356,7 +358,7 @@ class Database extends SQLiteOpenHelper {
      * @param bb The lat,lon bounding box.
      * @return A collection of RF emitter identifications
      */
-    public HashSet<RfIdentification> getEmitters(RfEmitter.EmitterType rfType, BoundingBox bb) {
+    public HashSet<RfIdentification> getEmitters(EmitterType rfType, BoundingBox bb) {
         HashSet<RfIdentification> rslt = new HashSet<>();
         String query = "SELECT " +
                 COL_RFID + " " +

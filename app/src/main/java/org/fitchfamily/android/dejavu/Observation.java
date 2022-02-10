@@ -36,7 +36,7 @@ import android.support.annotation.NonNull;
  * level and optionally a note about about the emitter.
  */
 
-class Observation implements Comparable<Observation> {
+public class Observation implements Comparable<Observation> {
     private final RfIdentification ident;
     private int asu;
     private String note;
@@ -44,7 +44,7 @@ class Observation implements Comparable<Observation> {
     private long mLastUpdateTimeMs;
     private long mElapsedRealtimeNanos;
 
-    Observation(String id, RfEmitter.EmitterType t) {
+    Observation(String id, EmitterType t) {
         ident = new RfIdentification(id, t);
         note = "";
         asu = BackendService.MINIMUM_ASU;

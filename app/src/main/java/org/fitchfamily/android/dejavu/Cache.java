@@ -173,7 +173,7 @@ class Cache {
         }
     }
 
-    public HashSet<RfIdentification> getEmitters(RfEmitter.EmitterType rfType, BoundingBox bb) {
+    public HashSet<RfIdentification> getEmitters(EmitterType rfType, BoundingBox bb) {
         synchronized (this) {
             if (db == null)
                 return null;
