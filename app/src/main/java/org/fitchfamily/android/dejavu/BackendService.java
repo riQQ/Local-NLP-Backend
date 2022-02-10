@@ -1047,7 +1047,8 @@ public class BackendService extends LocationBackendService {
         // computation.
 
         Set<RfIdentification> expectedSet = new HashSet<>();
-        if (weightedAverageLocation != null) {
+        if (weightedAverageLocation != null // getExpected is slow when the database is large, so don't check every time
+                && (getRfLocations(seenSet).size() - locations.size() > 2 || System.currentTimeMillis() % 8 == 1)) {
             emitterCache.sync();        // getExpected() ends bypassing the cache, so sync first
 
             for (EmitterType etype : EmitterType.values()) {
