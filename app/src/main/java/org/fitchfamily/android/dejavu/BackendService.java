@@ -150,9 +150,9 @@ public class BackendService extends LocationBackendService {
     // So these numbers are the minimum time. Actual will be at least that based
     // on when we get GPS locations and/or update requests from microG/UnifiedNlp.
     //
-    private final static long REPORTING_INTERVAL   = 2700;                          // in milliseconds
+    private final static long REPORTING_INTERVAL   = 5000;                          // in milliseconds
     private final static long MOBILE_SCAN_INTERVAL = REPORTING_INTERVAL/2 - 100;    // in milliseconds
-    private final static long WLAN_SCAN_INTERVAL   = REPORTING_INTERVAL/3 - 100;    // in milliseconds
+    private final static long WLAN_SCAN_INTERVAL   = REPORTING_INTERVAL/2 - 100;    // in milliseconds
 
     private long nextMobileScanTime;
     private long nextWlanScanTime;
@@ -765,7 +765,18 @@ public class BackendService extends LocationBackendService {
         // Check for the end of our collection period. If we are in a new period
         // then finish off the processing for the previous period.
         long currentProcessTime = System.currentTimeMillis();
-        if (currentProcessTime >= nextReportTime) {
+        if (gpsLocation == null) {
+            if (!wifiScanInprogress || currentProcessTime > nextWlanScanTime) {
+            if (DEBUG)
+                Log.d(TAG,"endOfPeriod: wifi scan finished or timed out");
+            nextReportTime = currentProcessTime + REPORTING_INTERVAL;
+            endOfPeriodProcessing();
+            }
+        } else if (currentProcessTime > (wifiScanInprogress ?
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N ? Long.max(nextWlanScanTime,nextReportTime)
+                        : nextWlanScanTime) : nextReportTime)) {
+            if (DEBUG)
+                Log.d(TAG,"endOfPeriod: gps received and report interval over");
             nextReportTime = currentProcessTime + REPORTING_INTERVAL;
             endOfPeriodProcessing();
         }
@@ -1005,6 +1016,7 @@ public class BackendService extends LocationBackendService {
 
         emitterCache.sync();
         seenSet = new HashSet<>();
+        gpsLocation = null;
     }
 
     /**
