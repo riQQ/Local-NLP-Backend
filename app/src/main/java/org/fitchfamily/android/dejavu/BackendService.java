@@ -22,6 +22,7 @@ package org.fitchfamily.android.dejavu;
  * Created by tfitch on 8/27/17.
  */
 
+import android.annotation.SuppressLint;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -157,6 +158,7 @@ public class BackendService extends LocationBackendService {
     private long nextMobileScanTime;
     private long nextWlanScanTime;
     private long nextReportTime;
+    private int mMnc = Integer.MAX_VALUE;
 
     //
     // We want only a single background thread to do all the work but we have a couple
@@ -437,6 +439,21 @@ public class BackendService extends LocationBackendService {
         }
     }
 
+    private int getMnc() {
+        if (mMnc == Integer.MAX_VALUE) {
+                String mncString = tm.getNetworkOperator();
+                if ((mncString == null) || (mncString.length() < 5) || (mncString.length() > 6)) {
+                        return mMnc;
+                    }
+                try {
+                    mMnc = Integer.parseInt(mncString.substring(3));
+                } catch (NumberFormatException e) { mMnc = Integer.MAX_VALUE;}
+                if (DEBUG)
+                    Log.d(TAG,"getMnc(): got " + mncString + ", extracted "+ mMnc);
+            }
+        return mMnc;
+    }
+
     /**
      * Get the set of mobile (cell) towers that Android claims the phone can see.
      * we use the current API but fall back to deprecated methods if we get a null
@@ -444,6 +461,7 @@ public class BackendService extends LocationBackendService {
      *
      * @return A set of mobile tower observations
      */
+    @SuppressLint("MissingPermission")
     private Set<Observation> getMobileTowers() {
         if (tm == null) {
             tm = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
@@ -468,14 +486,18 @@ public class BackendService extends LocationBackendService {
                 if (inputCellInfo instanceof CellInfoLte) {
                     CellInfoLte info = (CellInfoLte) inputCellInfo;
                     CellIdentityLte id = info.getCellIdentity();
+                    int mnc;
+                    if (id.getMnc() == Integer.MAX_VALUE && getMnc() != Integer.MAX_VALUE) {
+                        mnc = mMnc;
+                    } else { mnc = Integer.MAX_VALUE; }
 
                     // CellIdentityLte accessors all state Integer.MAX_VALUE is returned for unknown values.
-                    if ((id.getMcc() != Integer.MAX_VALUE) && (id.getMnc() != Integer.MAX_VALUE) &&
+                    if ((id.getMcc() != Integer.MAX_VALUE) && (mnc != Integer.MAX_VALUE) &&
                         (id.getCi() != Integer.MAX_VALUE) && (id.getPci() != Integer.MAX_VALUE) &&
                         (id.getTac() != Integer.MAX_VALUE)) {
                         // Log.d(TAG, "getMobileTowers(): LTE tower: " + info.toString());
                         String idStr = "LTE" + "/" + id.getMcc() + "/" +
-                                id.getMnc() + "/" + id.getCi() + "/" +
+                                mnc + "/" + id.getCi() + "/" +
                                 id.getPci() + "/" + id.getTac();
                         int asu = (info.getCellSignalStrength().getAsuLevel() * MAXIMUM_ASU) / 97;
 
@@ -491,13 +513,17 @@ public class BackendService extends LocationBackendService {
                 } else if (inputCellInfo instanceof CellInfoGsm) {
                     CellInfoGsm info = (CellInfoGsm) inputCellInfo;
                     CellIdentityGsm id = info.getCellIdentity();
+                    int mnc;
+                    if (id.getMnc() == Integer.MAX_VALUE && getMnc() != Integer.MAX_VALUE) {
+                        mnc = mMnc;
+                    } else { mnc = Integer.MAX_VALUE; }
 
                     // CellIdentityGsm accessors all state Integer.MAX_VALUE is returned for unknown values.
-                    if ((id.getMcc() != Integer.MAX_VALUE) && (id.getMnc() != Integer.MAX_VALUE) &&
-                        (id.getLac() != Integer.MAX_VALUE) && (id.getCid() != Integer.MAX_VALUE)) {
+                    if ((id.getMcc() != Integer.MAX_VALUE) && (mnc != Integer.MAX_VALUE) &&
+                            (id.getLac() != Integer.MAX_VALUE) && (id.getLac() != 0) && (id.getCid() != Integer.MAX_VALUE)) {
                         // Log.d(TAG, "getMobileTowers(): GSM tower: " + info.toString());
                         String idStr = "GSM" + "/" + id.getMcc() + "/" +
-                                id.getMnc() + "/" + id.getLac() + "/" +
+                                mnc + "/" + id.getLac() + "/" +
                                 id.getCid();
                         int asu = info.getCellSignalStrength().getAsuLevel();
                         Observation o = new Observation(idStr, RfEmitter.EmitterType.MOBILE);
@@ -512,13 +538,17 @@ public class BackendService extends LocationBackendService {
                 } else if (inputCellInfo instanceof CellInfoWcdma) {
                     CellInfoWcdma info = (CellInfoWcdma) inputCellInfo;
                     CellIdentityWcdma id = info.getCellIdentity();
+                    int mnc;
+                    if (id.getMnc() == Integer.MAX_VALUE && getMnc() != Integer.MAX_VALUE) {
+                        mnc = mMnc;
+                    } else { mnc = Integer.MAX_VALUE; }
 
                     // CellIdentityWcdma accessors all state Integer.MAX_VALUE is returned for unknown values.
-                    if ((id.getMcc() != Integer.MAX_VALUE) && (id.getMnc() != Integer.MAX_VALUE) &&
-                            (id.getLac() != Integer.MAX_VALUE) && (id.getCid() != Integer.MAX_VALUE)) {
+                    if ((id.getMcc() != Integer.MAX_VALUE) && (mnc != Integer.MAX_VALUE) &&
+                            (id.getLac() != Integer.MAX_VALUE) && (id.getLac() != 0) && (id.getCid() != Integer.MAX_VALUE)) {
                         // Log.d(TAG, "getMobileTowers(): WCDMA tower: " + info.toString());
                         String idStr = "WCDMA" + "/" + id.getMcc() + "/" +
-                                id.getMnc() + "/" + id.getLac() + "/" +
+                                mnc + "/" + id.getLac() + "/" +
                                 id.getCid();
                         int asu = info.getCellSignalStrength().getAsuLevel();
                         Observation o = new Observation(idStr, RfEmitter.EmitterType.MOBILE);
@@ -561,6 +591,7 @@ public class BackendService extends LocationBackendService {
         }
         if (DEBUG)
             Log.d(TAG, "getMobileTowers(): Observations: " + observations.toString());
+        mMnc = Integer.MAX_VALUE; // always set to invalid again
         return observations;
     }
 
@@ -571,6 +602,7 @@ public class BackendService extends LocationBackendService {
      *
      * @return A set of observations for all the towers Android is reporting.
      */
+    @SuppressLint("MissingPermission")
     private Set<Observation> deprecatedGetMobileTowers() {
 
         Set<Observation> observations = new HashSet<>();
