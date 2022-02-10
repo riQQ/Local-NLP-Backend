@@ -617,27 +617,26 @@ public class RfEmitter {
         final String macSuffix = id.substring(id.length()-8).toLowerCase(Locale.US).replace(":", "");
         boolean rslt =
                 // Mobile phone brands
-                lc.contains("android") ||                   // mobile tethering
-                lc.contains("ipad") ||                      // mobile tethering
-                lc.contains("iphone") ||                    // mobile tethering
-                lc.contains("motorola") ||                  // mobile tethering
-                lc.endsWith(" phone") ||                    // "Lans Phone" seen
-                lc.startsWith("moto ") ||                   // "Moto E (4) 9509" seen
-                note.startsWith("MOTO") ||                  // "MOTO9564" and "MOTO9916" seen
-                note.startsWith("Samsung Galaxy") ||        // mobile tethering
-                lc.startsWith("lg aristo") ||               // "LG Aristo 7124" seen
+                lc.contains("android") ||                 // mobile tethering
+                lc.contains("ipad") ||                    // mobile tethering
+                lc.contains("phone") ||                   // mobile tethering
+                lc.contains("motorola") ||                // mobile tethering
+                lc.startsWith("moto ") ||                 // "Moto E (4) 9509" seen
+                note.startsWith("MOTO") ||                // "MOTO9564" and "MOTO9916" seen
+                lc.startsWith("samsung galaxy") ||        // mobile tethering
+                lc.startsWith("lg aristo") ||             // "LG Aristo 7124" seen
 
                 // Mobile network brands
-                lc.contains("mobile hotspot") ||            // e.g "MetroPCS Portable Mobile Hotspot"
-                note.startsWith("CellSpot") ||              // T-Mobile US portable cell based WiFi
-                note.startsWith("Verizon-") ||              // Verizon mobile hotspot
+                lc.contains("mobile hotspot") ||          // e.g "MetroPCS Portable Mobile Hotspot"
+                lc.startsWith("cellspot") ||              // T-Mobile US portable cell based WiFi
+                lc.startsWith("verizon-") ||              // Verizon mobile hotspot
 
                 // Per some instructional videos on YouTube, recent (2015 and later)
                 // General Motors built vehicles come with a default WiFi SSID of the
                 // form "WiFi Hotspot 1234" where the 1234 is different for each car.
                 // The SSID can be changed but the recommended SSID to change to
                 // is of the form "first_name vehicle_model" (e.g. "Bryces Silverado").
-                lc.startsWith("wifi hotspot ") ||           // Default GM vehicle WiFi name
+                lc.startsWith("wifi hotspot ") ||          // Default GM vehicle WiFi name
                 lc.endsWith("corvette") ||                 // Chevy Corvette. "TS Corvette" seen.
                 lc.endsWith("silverado") ||                // GMC Silverado. "Bryces Silverado" seen.
                 lc.endsWith("chevy") ||                    // Chevrolet. "Davids Chevy" seen
@@ -659,13 +658,13 @@ public class RfEmitter {
 
                 lc.equals(macSuffix) ||                     // Apparent default SSID name for many cars
                 note.startsWith("Audi") ||                  // some cars seem to have this AP on-board
-                note.startsWith("Chevy ") ||                // "Chevy Cruz 7774" seen.
-                note.startsWith("GMC WiFi") ||              // General Motors
-                note.startsWith("MyVolvo") ||               // Volvo in car WiFi
+                lc.startsWith("chevy ") ||                  // "Chevy Cruz 7774" seen.
+                lc.startsWith("gmc wifi") ||                // General Motors
+                lc.startsWith("myvolvo") ||                 // Volvo in car WiFi
 
                 // Transit agencies
-                lc.startsWith("oebb ") ||                   // WLAN network on Austrian Oebb trains
                 lc.startsWith("westbahn ") ||               // WLAN network on Austrian Westbahn trains
+                lc.startsWith("regiojet") ||                // WLAN network on Czech RegioJet
                 lc.contains("admin@ms ") ||                 // WLAN network on Hurtigruten ships
                 lc.contains("contiki-wifi") ||              // WLAN network on board of bus
                 lc.contains("db ic bus") ||                 // WLAN network on board of German bus
@@ -680,27 +679,29 @@ public class RfEmitter {
                 lc.contains("telekom_ice") ||               // WLAN network on DB trains
                 lc.contains("skanetrafiken") ||             // WLAN network on Skånetrafiken (Sweden) buses and trains
                 lc.contains("oresundstag") ||               // WLAN network on Øresundståg (Sweden/Denmark) trains
-                lc.contentEquals("amtrak") ||               // WLAN network on USA Amtrak trains
-                lc.contentEquals("amtrakconnect") ||        // WLAN network on USA Amtrak trains
-                lc.contentEquals("CDWiFi") ||               // WLAN network on Czech railways
-                lc.contentEquals("megabus") ||              // WLAN network on MegaBus US bus
-                lc.contentEquals("Regiojet - zluty") ||     // WLAN network on Czech airline
-                lc.contentEquals("RegioJet - zluty") ||     // WLAN network on Czech airline
-                lc.contentEquals("WESTlan") ||              // WLAN network on Austrian railways
-                lc.contentEquals("Wifi in de trein") ||     // WLAN network on Dutch railway
-                note.startsWith("BusWiFi") ||               // Some transit buses in LA Calif metro area
-                note.startsWith("CoachAmerica") ||          // Charter bus service with on board WiFi
-                note.startsWith("DisneyLandResortExpress") || // Bus with on board WiFi
-                note.startsWith("TaxiLinQ") ||              // Taxi cab wifi system.
-                note.startsWith("TransitWirelessWiFi") ||   // New York City public transport wifi
+                lc.contentEquals("amtrak") ||           // WLAN network on USA Amtrak trains
+                lc.contentEquals("amtrakconnect") ||    // WLAN network on USA Amtrak trains
+                lc.contentEquals("cdwifi") ||           // WLAN network on Czech railways
+                lc.contentEquals("megabus") ||          // WLAN network on MegaBus US bus
+                lc.contentEquals("westlan") ||          // WLAN network on Austrian railways
+                lc.contentEquals("wifi in de trein") || // WLAN network on Dutch railway
+                lc.contentEquals("svciob") ||           // WLAN network on Austrian railway
+                lc.contentEquals("oebb") ||             // WLAN network on Austrian Oebb trains
+                lc.contentEquals("oebb-postbus") ||     // WLAN network on Austrian Oebb buses
+                lc.contentEquals("dpmbfree") ||         // WLAN network on Czech public transport
+                lc.startsWith("buswifi") ||                 // Some transit buses in LA Calif metro area
+                lc.startsWith("coachamerica") ||            // Charter bus service with on board WiFi
+                lc.startsWith("disneylandresortexpress") || // Bus with on board WiFi
+                lc.startsWith("taxilinq") ||                // Taxi cab wifi system.
+                lc.startsWith("transitwirelesswifi") ||     // New York City public transport wifi
 
                 // Dash cams
-                note.startsWith("YICarCam") ||              // Dashcam WiFi.
+                lc.startsWith("yicarcam") ||                // Dashcam WiFi.
 
                 // Other
                 lc.contains("mobile") ||                    // What I'd put into a mobile hotspot name
                 lc.contains("nsb_interakti") ||             // ???
-                lc.contains("NVRAM WARNING")                // NVRAM WARNING Error pseudo-network
+                lc.contains("nvram warning")                // NVRAM WARNING Error pseudo-network
 
                 // lc.endsWith("_nomap")                    // Google unsubscibe option
         ;
