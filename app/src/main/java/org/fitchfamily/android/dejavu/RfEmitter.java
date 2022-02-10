@@ -247,7 +247,7 @@ public class RfEmitter {
 
     public void setLastObservation(Observation obs) {
         mLastObservation = obs;
-        note = obs.getNote();
+        setNote(obs.getNote());
     }
 
     public void setNote(String n) {
