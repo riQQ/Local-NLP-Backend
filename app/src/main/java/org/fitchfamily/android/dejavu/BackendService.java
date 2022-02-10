@@ -368,8 +368,11 @@ public class BackendService extends LocationBackendService {
         // Even in a vehicle moving at highway speeds it can take several seconds to traverse
         // the coverage area, no need to waste phone resources scanning too rapidly.
         long currentProcessTime = System.currentTimeMillis();
-        if (currentProcessTime < nextWlanScanTime)
+        if (currentProcessTime < nextWlanScanTime) {
+            if (DEBUG)
+                Log.d(TAG, "startWiFiScan() - need to wait before starting next scan");
             return;
+        }
         nextWlanScanTime = currentProcessTime + WLAN_SCAN_INTERVAL;
 
         if (wm == null) {
@@ -378,11 +381,14 @@ public class BackendService extends LocationBackendService {
         if ((wm != null)  && !wifiScanInprogress) {
             if (wm.isWifiEnabled() ||
                     ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) && wm.isScanAlwaysAvailable())) {
-                //Log.d(TAG,"startWiFiScan() - Starting WiFi collection.");
+                if (DEBUG)
+                    if (DEBUG)
+                        Log.d(TAG,"startWiFiScan() - Starting WiFi collection.");
                 wifiScanInprogress = true;
                 wm.startScan();
             }
-        }
+        } else if (DEBUG)
+            Log.d(TAG,"startWiFiScan() - WiFi scan in progress, not starting.");
     }
 
     /**
@@ -425,7 +431,8 @@ public class BackendService extends LocationBackendService {
         Collection<Observation> observations = getMobileTowers();
 
         if (observations.size() > 0) {
-            // Log.d(TAG,"scanMobile() " + observations.size() + " records to be queued for processing.");
+            if (DEBUG)
+                Log.d(TAG,"scanMobile() " + observations.size() + " records to be queued for processing.");
             queueForProcessing(observations, System.currentTimeMillis());
         }
     }
@@ -453,9 +460,11 @@ public class BackendService extends LocationBackendService {
             // Log.d(TAG, "getMobileTowers(): no such method: getAllCellInfo().");
         }
         if ((allCells != null) && !allCells.isEmpty()) {
-            // Log.d(TAG, "getMobileTowers(): getAllCellInfo() returned "+ allCells.size() + "records.");
+            if (DEBUG)
+                Log.d(TAG, "getMobileTowers(): getAllCellInfo() returned "+ allCells.size() + " records.");
             for (android.telephony.CellInfo inputCellInfo : allCells) {
-                // Log.d(TAG, "getMobileTowers(): inputCellInfo: "+ inputCellInfo.toString());
+                if (DEBUG)
+                    Log.d(TAG, "getMobileTowers(): inputCellInfo: "+ inputCellInfo.toString());
                 if (inputCellInfo instanceof CellInfoLte) {
                     CellInfoLte info = (CellInfoLte) inputCellInfo;
                     CellIdentityLte id = info.getCellIdentity();
@@ -473,6 +482,8 @@ public class BackendService extends LocationBackendService {
                         Observation o = new Observation(idStr, RfEmitter.EmitterType.MOBILE);
                         o.setAsu(asu);
                         observations.add(o);
+                        if (DEBUG)
+                            Log.d(TAG,"valid observation string: "+idStr + ", asu "+asu);
                     } else {
                         if (DEBUG)
                             Log.d(TAG, "getMobileTowers(): LTE Cell Identity has unknown values: " + id.toString());
@@ -492,6 +503,8 @@ public class BackendService extends LocationBackendService {
                         Observation o = new Observation(idStr, RfEmitter.EmitterType.MOBILE);
                         o.setAsu(asu);
                         observations.add(o);
+                        if (DEBUG)
+                            Log.d(TAG,"valid observation string: "+idStr + ", asu "+asu);
                     } else {
                         if (DEBUG)
                             Log.d(TAG, "getMobileTowers(): GSM Cell Identity has unknown values: " + id.toString());
@@ -511,6 +524,8 @@ public class BackendService extends LocationBackendService {
                         Observation o = new Observation(idStr, RfEmitter.EmitterType.MOBILE);
                         o.setAsu(asu);
                         observations.add(o);
+                        if (DEBUG)
+                            Log.d(TAG,"valid observation string: "+idStr + ", asu "+asu);
                     } else {
                         if (DEBUG)
                             Log.d(TAG, "getMobileTowers(): WCDMA Cell Identity has unknown values: " + id.toString());
@@ -529,6 +544,8 @@ public class BackendService extends LocationBackendService {
                         Observation o = new Observation(idStr, RfEmitter.EmitterType.MOBILE);
                         o.setAsu(asu);
                         observations.add(o);
+                        if (DEBUG)
+                            Log.d(TAG,"valid observation string: "+idStr + ", asu "+asu);
                     } else {
                         if (DEBUG)
                             Log.d(TAG, "getMobileTowers(): CDMA Cell Identity has unknown values: " + id.toString());
@@ -538,9 +555,12 @@ public class BackendService extends LocationBackendService {
                 }
             }
         } else {
+            if (DEBUG)
+                Log.d(TAG, "getMobileTowers(): allCells null or empty, using deprecated");
             observations = deprecatedGetMobileTowers();
         }
-        //Log.d(TAG, "getMobileTowers(): Observations: " + observations.toString());
+        if (DEBUG)
+            Log.d(TAG, "getMobileTowers(): Observations: " + observations.toString());
         return observations;
     }
 
@@ -650,12 +670,15 @@ public class BackendService extends LocationBackendService {
         if ((wm != null) && (emitterCache != null)) {
             List<ScanResult> scanResults = wm.getScanResults();
             Set<Observation> observations = new HashSet<>();
+            if (DEBUG)
+                Log.d(TAG,"onWiFisChanged(): "+scanResults.size()+" scan results");
             for (ScanResult sr : scanResults) {
                 String bssid = sr.BSSID.toLowerCase(Locale.US).replace(".", ":");
                 RfEmitter.EmitterType rftype = RfEmitter.EmitterType.WLAN_24GHZ;
                 if (is5GHz(sr))
                     rftype = RfEmitter.EmitterType.WLAN_5GHZ;
-                Log.i(TAG,"rfType="+rftype.toString()+", ScanResult="+sr.toString());
+                if (DEBUG)
+                    Log.d(TAG,"rfType="+rftype.toString()+", ScanResult="+sr.toString());
                 if (bssid != null) {
                     Observation o = new Observation(bssid, rftype);
 
@@ -665,7 +688,8 @@ public class BackendService extends LocationBackendService {
                 }
             }
             if (!observations.isEmpty()) {
-                // Log.d(TAG, "onWiFisChanged(): Observations: " + observations.toString());
+                if (DEBUG)
+                    Log.d(TAG,"onWiFisChanged(): "+observations.size()+" observations");
                 queueForProcessing(observations, System.currentTimeMillis());
             }
         }
@@ -957,7 +981,8 @@ public class BackendService extends LocationBackendService {
      */
     private void endOfPeriodProcessing() {
 
-        //Log.d(TAG,"endOfPeriodProcessing() - Starting new process period.");
+        if (DEBUG)
+            Log.d(TAG,"endOfPeriodProcessing() - Starting new process period.");
 
         // Estimate location using weighted average of the most recent
         // observations from the set of RF emitters we have seen. We cull
