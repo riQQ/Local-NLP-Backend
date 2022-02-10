@@ -42,10 +42,11 @@ import java.util.HashSet;
 public class Database extends SQLiteOpenHelper {
     private static final String TAG = "DejaVu DB";
 
-    private static final int VERSION = 3;
+    private static final int VERSION = 4;
     private static final String NAME = "rf.db";
 
     private static final String TABLE_SAMPLES = "emitters";
+    private static final String SPATIAL_INDEX_SAMPLES = "emitters_index";
 
     private static final String COL_HASH = "rfHash";        // v3 of database
     private static final String COL_TYPE = "rfType";
@@ -105,6 +106,8 @@ public class Database extends SQLiteOpenHelper {
             upGradeToVersion2(db);
         if (oldVersion < 3)
             upGradeToVersion3(db);
+        if (oldVersion < 4)
+            upGradeToVersion4(db);
     }
 
     private void upGradeToVersion2(SQLiteDatabase db) {
@@ -217,6 +220,12 @@ public class Database extends SQLiteOpenHelper {
         db.execSQL("DROP TABLE " + TABLE_SAMPLES + ";");
         db.execSQL("ALTER TABLE " + TABLE_SAMPLES + "_new RENAME TO " + TABLE_SAMPLES + ";");
         db.execSQL("COMMIT;");
+    }
+
+    private void upGradeToVersion4(SQLiteDatabase db) {
+        db.execSQL("CREATE INDEX " + SPATIAL_INDEX_SAMPLES + " ON " + NAME +
+                        " (" + COL_LAT + "," + COL_LON + ");"
+            );
     }
 
     @Override
