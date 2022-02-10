@@ -507,7 +507,7 @@ public class RfEmitter {
 
         if (coverage.update(gpsLoc.getLatitude(), gpsLoc.getLongitude())) {
             // Bounding box has increased, see if it is now unbelievably large
-            if (coverage.getRadius() >= ourCharacteristics.moveDetectDistance) {
+/*            if (coverage.getRadius() >= ourCharacteristics.moveDetectDistance) {
                 Log.d(TAG, "updateLocation("+id+") emitter has moved (" + gpsLoc.distanceTo(_getLocation()) + ")");
                 coverage = new BoundingBox(gpsLoc.getLatitude(), gpsLoc.getLongitude(), 0.0f);
                 trust = ourCharacteristics.discoveryTrust;
@@ -515,6 +515,11 @@ public class RfEmitter {
             } else {
                 changeStatus(EmitterStatus.STATUS_CHANGED, "updateLocation('" + logString() + "') BBOX update");
             }
+*/
+            // this is not working well, moving non-blacklisted emitters move every now and then,
+            //   but provide bad positions in between
+            // simply update bbox and blacklist large bounding boxes
+            changeStatus(EmitterStatus.STATUS_CHANGED, "updateLocation('" + logString() + "') BBOX update");
         }
     }
 
@@ -533,7 +538,7 @@ public class RfEmitter {
 
         // If we don't trust the location, we ought not give a position
         // estimate based on it.
-        if ((trust < REQUIRED_TRUST) || (status == EmitterStatus.STATUS_BLACKLISTED))
+        if ((trust < REQUIRED_TRUST) || (status == EmitterStatus.STATUS_BLACKLISTED) || (getRadius() > ourCharacteristics.moveDetectDistance))
             return null;
 
         // If we don't have a coverage estimate we will get back a null location
