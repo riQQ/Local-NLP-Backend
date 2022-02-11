@@ -373,7 +373,7 @@ class Database(context: Context?) :
                 COL_NOTE + ", " +
                 COL_RFID + " " +
                 " FROM " + TABLE_SAMPLES +
-                " WHERE " + COL_HASH + "IN (" + idString + ");")
+                " WHERE " + COL_HASH + " IN (" + idString + ");")
 
         // Log.d(TAG, "getEmitter(): query='"+query+"'");
         val c = readableDatabase.rawQuery(query, null)

@@ -700,9 +700,9 @@ class BackendService : LocationBackendService() {
             // Determine minimum count for a valid group of emitters.
             // The RfEmitter class will have put the min count into the location
             // it provided.
-            var requiredCount = 99999L // Some impossibly big number
+            var requiredCount = 99999 // Some impossibly big number
             for (l in result) {
-                requiredCount = l.extras.getLong(RfEmitter.LOC_MIN_COUNT, 9999L).coerceAtMost(requiredCount)
+                requiredCount = l.extras.getInt(RfEmitter.LOC_MIN_COUNT, 9999).coerceAtMost(requiredCount)
             }
             //Log.d(TAG,"culledEmitters() reqdCount="+reqdCount+", size="+rslt.size());
             if (result.size >= requiredCount) return result
