@@ -71,9 +71,9 @@ class RfEmitter(val type: EmitterType, val id: String) {
         }
     private var status: EmitterStatus = EmitterStatus.STATUS_UNKNOWN
 
-    val uniqueId: String get() = rfIdent.uniqueId
+    val uniqueId: String get() = rfIdentification.uniqueId
     val typeString: String get() = type.toString()
-    val rfIdent: RfIdentification get() = RfIdentification(id, type)
+    val rfIdentification: RfIdentification get() = RfIdentification(id, type)
     val lat: Double get() = coverage?.center_lat ?: 0.0
     val lon: Double get() = coverage?.center_lon ?: 0.0
     val radius: Double get() = coverage?.radius ?: 0.0
@@ -101,7 +101,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is RfIdentification) return false
-        return rfIdent == other
+        return rfIdentification == other
     }
 
     /**
@@ -113,7 +113,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
      * @return A hash code for this object.
      */
     override fun hashCode(): Int {
-        return rfIdent.hashCode()
+        return rfIdentification.hashCode()
     }
 
     /**
@@ -161,7 +161,9 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 if (coverage != null) {
                     db.drop(this)
                     coverage = null
-                    if (DEBUG) Log.d(TAG, "sync('" + logString() + "') - Blacklisted dropping from database.")
+                    if (DEBUG) Log.d(TAG,
+                        "sync('$logString') - Blacklisted dropping from database."
+                    )
                 }
             EmitterStatus.STATUS_NEW -> {
                 // Not in database, we have location. Add to database
@@ -171,7 +173,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
             EmitterStatus.STATUS_CHANGED -> {
                 // In database but we have changes
                 if (trust < MINIMUM_TRUST) {
-                    if (DEBUG) Log.d(TAG, "sync('" + logString() + "') - Trust below minimum, dropping from database.")
+                    if (DEBUG) Log.d(TAG, "sync('$logString') - Trust below minimum, dropping from database.")
                     db.drop(this)
                 } else
                     db.update(this)
@@ -179,12 +181,10 @@ class RfEmitter(val type: EmitterType, val id: String) {
             }
             EmitterStatus.STATUS_CACHED -> { }
         }
-        changeStatus(newStatus, "sync('" + logString() + "')")
+        changeStatus(newStatus, "sync('$logString')")
     }
 
-    fun logString(): String {
-        return "RF Emitter: Type=$type, ID='$id', Note='$note'"
-    }
+    val logString get() = if (DEBUG) "RF Emitter: Type=$type, ID='$id', Note='$note'" else ""
 
     /**
      * Unfortunately some types of RF emitters are very mobile and a mobile emitter
@@ -193,13 +193,12 @@ class RfEmitter(val type: EmitterType, val id: String) {
      * are asked to increment trust we need to check that we have not passed the limit.
      */
     fun incrementTrust() {
-        //Log.d(TAG, "incrementTrust('"+id+"') - entry.");
         if (canUpdate()) {
             val newTrust = (trust + ourCharacteristics.increaseTrust).coerceAtMost(MAXIMUM_TRUST)
             if (newTrust != trust) {
-                if (DEBUG)  Log.d(TAG, "incrementTrust('" + logString() + "') - trust change: " + trust + "->" + newTrust)
+                if (DEBUG) Log.d(TAG, "incrementTrust('$logString') - trust change: $trust -> $newTrust")
                 trust = newTrust
-                changeStatus(EmitterStatus.STATUS_CHANGED, "incrementTrust('" + logString() + "')")
+                changeStatus(EmitterStatus.STATUS_CHANGED, "incrementTrust('$logString')")
             }
         }
     }
@@ -211,9 +210,10 @@ class RfEmitter(val type: EmitterType, val id: String) {
     fun decrementTrust() {
         if (canUpdate()) {
             if (ourCharacteristics.decreaseTrust != 0L) {
+                if (DEBUG) Log.d(TAG, "decrementTrust('$logString') - trust change: $trust" +
+                        " -> " + (trust - ourCharacteristics.decreaseTrust))
                 trust -= ourCharacteristics.decreaseTrust
-                // Log.d(TAG, "decrementTrust('" + logString() + "') - trust change: " + oldTrust + "->" + trust);
-                changeStatus(EmitterStatus.STATUS_CHANGED, "decrementTrust('" + logString() + "')")
+                changeStatus(EmitterStatus.STATUS_CHANGED, "decrementTrust('$logString')")
             }
         }
     }
@@ -230,10 +230,9 @@ class RfEmitter(val type: EmitterType, val id: String) {
         if (emitterInfo != null) {
             if (coverage == null)
                 coverage = BoundingBox(emitterInfo)
-            //Log.d(TAG,"updateInfo() - Setting info for '"+id+"'");
             trust = emitterInfo.trust
             note = emitterInfo.note
-            changeStatus(EmitterStatus.STATUS_CACHED, "updateInfo('" + logString() + "')")
+            changeStatus(EmitterStatus.STATUS_CACHED, "updateInfo('$logString')")
         }
     }
 
@@ -246,13 +245,13 @@ class RfEmitter(val type: EmitterType, val id: String) {
     fun updateLocation(gpsLoc: Location?) {
         if (status == EmitterStatus.STATUS_BLACKLISTED) return
         if ((gpsLoc == null) || (gpsLoc.accuracy > ourCharacteristics.requiredGpsAccuracy)) {
-            if (DEBUG) Log.d(TAG, "updateLocation("+logString()+") No update because no GPS location or location inaccurate.")
+            if (DEBUG) Log.d(TAG, "updateLocation($logString) No update because no GPS location or location inaccurate.")
             return
         }
         if (coverage == null) {
-            if (DEBUG) Log.d(TAG, "updateLocation(" + logString() + ") emitter is new.")
+            if (DEBUG) Log.d(TAG, "updateLocation($logString) emitter is new.")
             coverage = BoundingBox(gpsLoc.latitude, gpsLoc.longitude, 0.0f)
-            changeStatus(EmitterStatus.STATUS_NEW, "updateLocation('" + logString() + "') New")
+            changeStatus(EmitterStatus.STATUS_NEW, "updateLocation('$logString') New")
             return
         }
 
@@ -273,7 +272,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
             // simply update bbox and treat large bounding boxes like blacklisted
             //  but don't set emitter status to blacklisted, or the emitter will be dropped and
             //  soon added again to DB
-            changeStatus(EmitterStatus.STATUS_CHANGED, "updateLocation('" + logString() + "') BBOX update")
+            changeStatus(EmitterStatus.STATUS_CHANGED, "updateLocation('$logString') BBOX update")
         }
     }
 
@@ -453,8 +452,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 lc.contains("nsb_interakti") ||     // ???
                 lc.contains("nvram warning"))       // NVRAM WARNING Error pseudo-network
 
-                // lc.endsWith("_nomap")                    // Google unsubscibe option
-        if (DEBUG) Log.d(TAG, "blacklistWifi('" + logString() + "'): blacklisted = $blacklisted")
+                // lc.endsWith("_nomap")                    // Google unsubscribe option
+        if (DEBUG) Log.d(TAG, "blacklistWifi('$logString'): blacklisted = $blacklisted")
         return blacklisted
     }
 
@@ -480,7 +479,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
      * @param newStatus The desired new status (state)
      * @param info Logging information for debug purposes
      */
-    private fun changeStatus(newStatus: EmitterStatus?, info: String) {
+    private fun changeStatus(newStatus: EmitterStatus, info: String) {
         if (newStatus == status) return
         when (status) {
             EmitterStatus.STATUS_BLACKLISTED -> { }
@@ -503,6 +502,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
                     else -> { }
             }
         }
+        if (DEBUG) Log.d(TAG, "$info: tried switching to $newStatus, result: $status")
         return
     }
 

@@ -41,6 +41,7 @@ import java.util.HashSet;
  */
 public class Database extends SQLiteOpenHelper {
     private static final String TAG = "DejaVu DB";
+    private static final boolean DEBUG = BuildConfig.DEBUG;
 
     private static final int VERSION = 4;
     private static final String NAME = "rf.db";
@@ -111,7 +112,7 @@ public class Database extends SQLiteOpenHelper {
     }
 
     private void upGradeToVersion2(SQLiteDatabase db) {
-        Log.d(TAG, "upGradeToVersion2(): Entry");
+        if (DEBUG) Log.d(TAG, "upGradeToVersion2(): Entry");
         // Sqlite3 does not support dropping columns so we create a new table with our
         // current fields and copy the old data into it.
         db.execSQL("BEGIN TRANSACTION;");
@@ -150,7 +151,7 @@ public class Database extends SQLiteOpenHelper {
     }
 
     private void upGradeToVersion3(SQLiteDatabase db) {
-        Log.d(TAG, "upGradeToVersion3(): Entry");
+        if (DEBUG) Log.d(TAG, "upGradeToVersion3(): Entry");
 
         // We are changing our key field to a new text field that contains a hash of
         // of the ID and type. In addition, we are dealing with a Lint complaint about
@@ -242,9 +243,8 @@ public class Database extends SQLiteOpenHelper {
      * start the transaction on the underlying SQL database.
      */
     public void beginTransaction() {
-        //Log.d(TAG,"beginTransaction()");
         if (withinTransaction) {
-            Log.d(TAG,"beginTransaction() - Already in a transaction?");
+            if (DEBUG) Log.d(TAG,"beginTransaction() - Already in a transaction?");
             return;
         }
         withinTransaction = true;
@@ -287,9 +287,8 @@ public class Database extends SQLiteOpenHelper {
      * end the transaction with the underlying SQL database.
      */
     public void endTransaction() {
-        //Log.d(TAG,"endTransaction()");
         if (!withinTransaction) {
-            Log.d(TAG,"Asked to end transaction but we are not in one???");
+            if (DEBUG) Log.d(TAG,"Asked to end transaction but we are not in one???");
         }
 
         if (updatesMade) {
@@ -307,7 +306,7 @@ public class Database extends SQLiteOpenHelper {
      * @param emitter The emitter to be dropped.
      */
     public void drop(RfEmitter emitter) {
-        //Log.d(TAG, "Dropping " + emitter.logString() + " from db");
+        if (DEBUG) Log.d(TAG, "Dropping " + emitter.getLogString() + " from db");
 
         sqlAPdrop.bindString(1, emitter.getUniqueId());
         sqlAPdrop.executeInsert();
@@ -321,7 +320,7 @@ public class Database extends SQLiteOpenHelper {
      * @param emitter The emitter to be added.
      */
     public void insert(RfEmitter emitter) {
-        Log.d(TAG, "Inserting " + emitter.logString() + " into db");
+        if (DEBUG) Log.d(TAG, "Inserting " + emitter.getLogString() + " into db");
         sqlSampleInsert.bindString(1, emitter.getUniqueId());
         sqlSampleInsert.bindString(2, emitter.getId());
         sqlSampleInsert.bindString(3, String.valueOf(emitter.getType()));
@@ -343,7 +342,7 @@ public class Database extends SQLiteOpenHelper {
      * @param emitter The emitter to be updated
      */
     public void update(RfEmitter emitter) {
-        //Log.d(TAG, "Updating " + emitter.logString() + " in db");
+        if (DEBUG) Log.d(TAG, "Updating " + emitter.getLogString() + " in db");
 
         // the data fields
         sqlSampleUpdate.bindString(1, String.valueOf(emitter.getTrust()));

@@ -55,8 +55,9 @@ import java.util.Set;
 class Cache {
     private static final int MAX_WORKING_SET_SIZE = 200;
     private static final int MAX_AGE = 30;
+    private static final boolean DEBUG = BuildConfig.DEBUG;
 
-    private static final String TAG="DejaVu Cache";
+    private static final String TAG = "DejaVu Cache";
 
     /**
      * Map (since they all must have different identifications) of
@@ -107,7 +108,7 @@ class Cache {
                 if (rslt == null)
                     rslt = new RfEmitter(id);
                 workingSet.put(key, rslt);
-                //Log.d(TAG,"get('"+key+"') - Added to cache.");
+                if (DEBUG) Log.d(TAG,"get('"+key+"') - Added to cache.");
             }
             rslt.resetAge();
             return rslt;
@@ -120,7 +121,7 @@ class Cache {
     private void clear() {
         synchronized (this) {
             workingSet.clear();
-            Log.d(TAG, "clear() - entry");
+            if (DEBUG) Log.d(TAG, "clear() - entry");
         }
     }
 
@@ -145,9 +146,9 @@ class Cache {
                 RfEmitter rfE = e.getValue();
                 doSync |= rfE.syncNeeded();
 
-                //Log.d(TAG,"sync('"+rfE.getRfIdent()+"') - Age: " + rfE.getAge());
+                if (DEBUG) Log.d(TAG,"sync('"+rfE.getRfIdentification()+"') - Age: " + rfE.getAge());
                 if (rfE.getAge() >= MAX_AGE)
-                    agedSet.add(rfE.getRfIdent());
+                    agedSet.add(rfE.getRfIdentification());
                 rfE.incrementAge();
             }
 
@@ -162,12 +163,12 @@ class Cache {
             // Remove aged out items from cache
             for (RfIdentification id : agedSet) {
                 String key = id.toString();
-                //Log.d(TAG,"sync('"+key+"') - Aged out, removed from cache.");
+                if (DEBUG) Log.d(TAG,"sync('"+key+"') - Aged out, removed from cache.");
                 workingSet.remove(key);
             }
 
             if (workingSet.size() > MAX_WORKING_SET_SIZE) {
-                Log.d(TAG, "sync() - Clearing working set.");
+                if (DEBUG) Log.d(TAG, "sync() - Clearing working set.");
                 workingSet.clear();
             }
         }

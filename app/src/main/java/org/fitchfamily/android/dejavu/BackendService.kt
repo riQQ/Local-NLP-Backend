@@ -264,7 +264,10 @@ class BackendService : LocationBackendService() {
         // coverage area for several seconds. No need to sample more ofen than that and we save
         // resources on the phone.
         val currentProcessTime = SystemClock.elapsedRealtime()
-        if (currentProcessTime < nextMobileScanTime) return
+        if (currentProcessTime < nextMobileScanTime) {
+            if (DEBUG) Log.d(TAG, "startMobileScan() - need to wait before starting next scan")
+            return
+        }
         nextMobileScanTime = currentProcessTime + MOBILE_SCAN_INTERVAL
 
         // Scanning towers takes some time, so do it in a separate thread.
