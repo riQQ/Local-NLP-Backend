@@ -223,7 +223,7 @@ public class Database extends SQLiteOpenHelper {
     }
 
     private void upGradeToVersion4(SQLiteDatabase db) {
-        db.execSQL("CREATE INDEX " + SPATIAL_INDEX_SAMPLES + " ON " + NAME +
+        db.execSQL("CREATE INDEX " + SPATIAL_INDEX_SAMPLES + " ON " + TABLE_SAMPLES +
                         " (" + COL_LAT + "," + COL_LON + ");"
             );
     }
