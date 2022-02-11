@@ -53,7 +53,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
     }
 
     private val ourCharacteristics = getRfCharacteristics(type)
-    var trust: Long = ourCharacteristics.discoveryTrust
+    var trust: Int = ourCharacteristics.discoveryTrust
         private set
     private var coverage: BoundingBox? = null
     var note: String = ""
@@ -209,7 +209,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
      */
     fun decrementTrust() {
         if (canUpdate()) {
-            if (ourCharacteristics.decreaseTrust != 0L) {
+            if (ourCharacteristics.decreaseTrust != 0) {
                 if (DEBUG) Log.d(TAG, "decrementTrust('$logString') - trust change: $trust" +
                         " -> " + (trust - ourCharacteristics.decreaseTrust))
                 trust -= ourCharacteristics.decreaseTrust
@@ -307,7 +307,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
             extras.putString(LOC_RF_TYPE, type.toString())
             extras.putString(LOC_RF_ID, id)
             extras.putInt(LOC_ASU, observation.asu)
-            extras.putLong(LOC_MIN_COUNT, ourCharacteristics.minCount)
+            extras.putInt(LOC_MIN_COUNT, ourCharacteristics.minCount)
             location.extras = extras
             return location
         }
@@ -512,9 +512,9 @@ class RfEmitter(val type: EmitterType, val id: String) {
         private const val TAG = "DejaVu RfEmitter"
         private const val METERS: Long = 1
         private const val KM = METERS * 1000
-        private const val MINIMUM_TRUST: Long = 0
-        private const val REQUIRED_TRUST: Long = 48
-        private const val MAXIMUM_TRUST: Long = 100
+        private const val MINIMUM_TRUST = 0
+        private const val REQUIRED_TRUST = 48
+        private const val MAXIMUM_TRUST = 100
 
         // Tag/names for additional information on location records
         const val LOC_RF_ID = "rfid"
@@ -612,10 +612,10 @@ class RfCharacteristics (
     val minimumRange: Float,
     val typicalRange: Float,
     val moveDetectDistance: Float,  // Maximum believable coverage radius in meters
-    val discoveryTrust: Long,       // Assumed trustiness of a rust an emitter seen for the first time.
-    val increaseTrust: Long,
-    val decreaseTrust: Long,
-    val minCount: Long              // Minimum number of emitters before we can estimate location
+    val discoveryTrust: Int,       // Assumed trustiness of a rust an emitter seen for the first time.
+    val increaseTrust: Int,
+    val decreaseTrust: Int,
+    val minCount: Int              // Minimum number of emitters before we can estimate location
 )
 
 fun typeOf(typeStr: String): EmitterType {
