@@ -573,6 +573,9 @@ class BackendService : LocationBackendService() {
         if (emitterCache == null) return
         val emitters: MutableCollection<RfEmitter> = HashSet()
 
+        // load all emitters into the cache to avoid several single database transactions
+        emitterCache!!.loadIds(myWork.observations.map { it.identification })
+
         // Remember all the emitters we've seen during this processing period
         // and build a set of emitter objects for each RF emitter in the
         // observation set.
@@ -778,6 +781,9 @@ class BackendService : LocationBackendService() {
             //Log.d(TAG, "endOfPeriodProcessing(): " + weightedAverageLocation.toString());
             report(weightedAverageLocation)
         }
+
+        // load all emitters into the cache to avoid several single database transactions
+        emitterCache!!.loadIds(seenSet)
 
         // Increment the trust of the emitters we've seen and decrement the trust
         // of the emitters we expected to see but didn't.

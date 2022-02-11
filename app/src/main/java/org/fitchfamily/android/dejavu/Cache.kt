@@ -80,9 +80,7 @@ internal class Cache(context: Context?) {
      * @param id
      * @return the emitter
      */
-    operator fun get(id: RfIdentification?): RfEmitter? {
-        if (id == null)
-            return null
+    operator fun get(id: RfIdentification): RfEmitter? {
         synchronized(this) {
             if (db == null)
                 return null
@@ -97,6 +95,16 @@ internal class Cache(context: Context?) {
             }
             result.resetAge()
             return result
+        }
+    }
+
+    fun loadIds(ids: Collection<RfIdentification>) {
+        synchronized(this) {
+            if (db == null) return
+            val idsToLoad = ids.filterNot { workingSet.containsKey(it.toString()) }
+            if (idsToLoad.isEmpty()) return
+            val emitters = db!!.getEmitters(idsToLoad)
+            workingSet.putAll(emitters.associateBy { it.uniqueId })
         }
     }
 
@@ -166,7 +174,7 @@ internal class Cache(context: Context?) {
     }
 
     companion object {
-        private const val MAX_WORKING_SET_SIZE = 200
+        private const val MAX_WORKING_SET_SIZE = 500
         private const val MAX_AGE = 30
         private val DEBUG = BuildConfig.DEBUG
         private const val TAG = "DejaVu Cache"
