@@ -342,8 +342,7 @@ class BackendService : LocationBackendService() {
 
                 val idStr = "LTE/${id.mcc}/$mnc/${id.ci}/${id.pci}/${id.tac}"
                 val asu = info.cellSignalStrength.asuLevel * MAXIMUM_ASU / 97
-                val o = Observation(idStr, EmitterType.MOBILE)
-                o.asu = asu
+                val o = Observation(idStr, EmitterType.MOBILE, asu)
                 observations.add(o)
                 if (DEBUG) Log.d(TAG, "valid observation string: $idStr, asu $asu")
 
@@ -359,8 +358,7 @@ class BackendService : LocationBackendService() {
 
                 val idStr = "GSM/${id.mcc}/$mnc/${id.lac}/${id.cid}"
                 val asu = info.cellSignalStrength.asuLevel
-                val o = Observation(idStr, EmitterType.MOBILE)
-                o.asu = asu
+                val o = Observation(idStr, EmitterType.MOBILE, asu)
                 observations.add(o)
                 if (DEBUG) Log.d(TAG, "valid observation string: $idStr, asu $asu")
 
@@ -375,8 +373,7 @@ class BackendService : LocationBackendService() {
 
                 val idStr = "WCDMA/${id.mcc}/$mnc/${id.lac}/${id.cid}"
                 val asu = info.cellSignalStrength.asuLevel
-                val o = Observation(idStr, EmitterType.MOBILE)
-                o.asu = asu
+                val o = Observation(idStr, EmitterType.MOBILE, asu)
                 observations.add(o)
                 if (DEBUG) Log.d(TAG, "valid observation string: $idStr, asu $asu")
 
@@ -388,8 +385,7 @@ class BackendService : LocationBackendService() {
 
                 val idStr = "CDMA/${id.networkId}/${id.systemId}/${id.basestationId}"
                 val asu = info.cellSignalStrength.asuLevel
-                val o = Observation(idStr, EmitterType.MOBILE)
-                o.asu = asu
+                val o = Observation(idStr, EmitterType.MOBILE, asu)
                 observations.add(o)
                 if (DEBUG) Log.d(TAG, "valid observation string: $idStr, asu $asu")
 
@@ -421,8 +417,7 @@ class BackendService : LocationBackendService() {
         val info = telephonyManager!!.cellLocation
         if (info != null && info is GsmCellLocation) {
             val idStr = "GSM/$mcc/$mnc/${info.lac}/${info.cid}"
-            val o = Observation(idStr, EmitterType.MOBILE)
-            o.asu = MINIMUM_ASU
+            val o = Observation(idStr, EmitterType.MOBILE, MINIMUM_ASU)
             observations.add(o)
         } else {
             if (DEBUG) Log.d(TAG, "deprecatedGetMobileTowers(): getCellLocation() returned null or not GsmCellLocation.")
@@ -435,8 +430,7 @@ class BackendService : LocationBackendService() {
                         val idStr = "GSM" + "/" + mcc + "/" +
                                 mnc + "/" + neighbor.lac + "/" +
                                 neighbor.cid
-                        val o = Observation(idStr, EmitterType.MOBILE)
-                        o.asu = neighbor.rssi
+                        val o = Observation(idStr, EmitterType.MOBILE, neighbor.rssi)
                         observations.add(o)
                     }
                 }
@@ -498,9 +492,11 @@ class BackendService : LocationBackendService() {
                 val rfType = if (is5GHz(scanResult)) EmitterType.WLAN_5GHZ
                     else EmitterType.WLAN_24GHZ
                 if (DEBUG) Log.v(TAG, "rfType=$rfType, ScanResult=$scanResult")
-                val observation = Observation(bssid, rfType)
-                observation.asu = WifiManager.calculateSignalLevel(scanResult.level, MAXIMUM_ASU)
-                observation.note = scanResult.SSID
+                val observation = Observation(bssid,
+                    rfType,
+                    WifiManager.calculateSignalLevel(scanResult.level, MAXIMUM_ASU),
+                    scanResult.SSID
+                )
                 observations.add(observation)
             }
             if (observations.isNotEmpty()) {
