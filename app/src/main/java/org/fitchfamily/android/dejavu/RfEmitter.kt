@@ -23,7 +23,6 @@ import android.location.Location
 import android.os.Bundle
 import android.util.Log
 import org.fitchfamily.android.dejavu.Database.EmitterInfo
-import java.util.*
 
 /**
  * Created by tfitch on 8/27/17.
@@ -47,14 +46,14 @@ import java.util.*
  * seen the emitter at our current location or if it looks like the emitter may have moved.
  */
 class RfEmitter(val type: EmitterType, val id: String) {
-    internal constructor(ident: RfIdentification) : this(ident.rfType, ident.rfId)
+    internal constructor(identification: RfIdentification) : this(identification.rfType, identification.rfId)
 
-    internal constructor(o: Observation) : this(o.ident.rfType, o.ident.rfId) {
-        lastObservation = o
+    internal constructor(observation: Observation) : this(observation.identification.rfType, observation.identification.rfId) {
+        lastObservation = observation
     }
 
-    private val ourCharacteristics: RfCharacteristics
-    var trust: Long = 0
+    private val ourCharacteristics = getRfCharacteristics(type)
+    var trust: Long = ourCharacteristics.discoveryTrust
         private set
     private var coverage: BoundingBox? = null
     var note: String = ""
@@ -63,7 +62,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 return
             field = value
             if (blacklistEmitter())
-                changeStatus(EmitterStatus.STATUS_BLACKLISTED, "initSelf()")
+                changeStatus(EmitterStatus.STATUS_BLACKLISTED, "emitter blacklisted")
         }
     var lastObservation: Observation? = null
         set(value) {
@@ -72,17 +71,14 @@ class RfEmitter(val type: EmitterType, val id: String) {
         }
     private var status: EmitterStatus = EmitterStatus.STATUS_UNKNOWN
 
-    /**
-     * Shared/uniform initialization, called from the various constructors we allow.
-     *
-     * @param type The type of the RF emitter (WLAN_24GHZ, MOBILE, etc.)
-     * @param id The identification of the emitter. Must be unique within type
-     */
-    init {
-        ourCharacteristics = getRfCharacteristics(type)
-        trust = ourCharacteristics.discoveryTrust
-        resetAge()
-    }
+    val uniqueId: String get() = rfIdent.uniqueId
+    val typeString: String get() = type.toString()
+    val rfIdent: RfIdentification get() = RfIdentification(id, type)
+    val lat: Double get() = coverage?.center_lat ?: 0.0
+    val lon: Double get() = coverage?.center_lon ?: 0.0
+    val radius: Double get() = coverage?.radius ?: 0.0
+    val radiusNS: Double get() = coverage?.radius_ns ?: 0.0
+    val radiusEW: Double get() = coverage?.radius_ew ?: 0.0
 
     /**
      * All RfEmitter objects are managed through a cache. The cache needs ages out
@@ -92,8 +88,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
      *
      * @return The current cache age.
      */
-    var age // Count of periods since last used (for caching purposes)
-            = 0
+    var age = 0 // Count of periods since last used (for caching purposes)
         private set
 
     /**
@@ -120,15 +115,6 @@ class RfEmitter(val type: EmitterType, val id: String) {
     override fun hashCode(): Int {
         return rfIdent.hashCode()
     }
-
-    val uniqueId: String get() = rfIdent.uniqueId
-    val typeString: String get() = type.toString()
-    val rfIdent: RfIdentification get() = RfIdentification(id, type)
-    val lat: Double get() = if (coverage != null) coverage!!.center_lat else 0.0
-    val lon: Double get() = if (coverage != null) coverage!!.center_lon else 0.0
-    val radius: Double get() = if (coverage != null) coverage!!.radius else 0.0
-    val radiusNS: Double get() = if (coverage != null) coverage!!.radius_ns else 0.0
-    val radiusEW: Double get() = if (coverage != null) coverage!!.radius_ew else 0.0
 
     /**
      * Resets the cache age to zero.
@@ -175,7 +161,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 if (coverage != null) {
                     db.drop(this)
                     coverage = null
-                    Log.d(TAG, "sync('" + logString() + "') - Blacklisted dropping from database.")
+                    if (DEBUG) Log.d(TAG, "sync('" + logString() + "') - Blacklisted dropping from database.")
                 }
             EmitterStatus.STATUS_NEW -> {
                 // Not in database, we have location. Add to database
@@ -185,7 +171,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
             EmitterStatus.STATUS_CHANGED -> {
                 // In database but we have changes
                 if (trust < MINIMUM_TRUST) {
-                    Log.d(TAG, "sync('" + logString() + "') - Trust below minimum, dropping from database.")
+                    if (DEBUG) Log.d(TAG, "sync('" + logString() + "') - Trust below minimum, dropping from database.")
                     db.drop(this)
                 } else
                     db.update(this)
@@ -211,7 +197,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
         if (canUpdate()) {
             val newTrust = (trust + ourCharacteristics.increaseTrust).coerceAtMost(MAXIMUM_TRUST)
             if (newTrust != trust) {
-                // Log.d(TAG, "incrementTrust('" + logString() + "') - trust change: " + trust + "->" + newTrust);
+                if (DEBUG)  Log.d(TAG, "incrementTrust('" + logString() + "') - trust change: " + trust + "->" + newTrust)
                 trust = newTrust
                 changeStatus(EmitterStatus.STATUS_CHANGED, "incrementTrust('" + logString() + "')")
             }
@@ -260,11 +246,11 @@ class RfEmitter(val type: EmitterType, val id: String) {
     fun updateLocation(gpsLoc: Location?) {
         if (status == EmitterStatus.STATUS_BLACKLISTED) return
         if ((gpsLoc == null) || (gpsLoc.accuracy > ourCharacteristics.requiredGpsAccuracy)) {
-            // Log.d(TAG, "updateLocation("+logString()+") No GPS location or location inaccurate.");
+            if (DEBUG) Log.d(TAG, "updateLocation("+logString()+") No update because no GPS location or location inaccurate.")
             return
         }
         if (coverage == null) {
-            Log.d(TAG, "updateLocation(" + logString() + ") emitter is new.")
+            if (DEBUG) Log.d(TAG, "updateLocation(" + logString() + ") emitter is new.")
             coverage = BoundingBox(gpsLoc.latitude, gpsLoc.longitude, 0.0f)
             changeStatus(EmitterStatus.STATUS_NEW, "updateLocation('" + logString() + "') New")
             return
@@ -353,10 +339,13 @@ class RfEmitter(val type: EmitterType, val id: String) {
      * @return True if the emitter is blacklisted (should not be used in position computations).
      */
     private fun blacklistEmitter(): Boolean =
-         when (type) {
-            EmitterType.WLAN_24GHZ, EmitterType.WLAN_5GHZ -> blacklistWifi()
-            else -> false // Not expecting mobile towers to move around.
-        }
+        if (note.isEmpty())
+            false
+        else
+             when (type) {
+                EmitterType.WLAN_24GHZ, EmitterType.WLAN_5GHZ -> blacklistWifi()
+                else -> false // Not expecting mobile towers to move around.
+            }
 
     /**
      * Checks the note field (where the SSID is saved) to see if it appears to be
@@ -381,8 +370,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
         val macSuffix =
             id.substring(id.length - 8).lowercase().replace(":", "")
 
-        //    Log.d(TAG, "blacklistWifi('" + logString() + "') blacklisted.");
-        return (
+        val blacklisted = (
                 // Mobile phone brands
                 lcSplit.contains("android") ||          // mobile tethering
                 lcSplit.contains("ipad") ||             // mobile tethering
@@ -466,6 +454,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 lc.contains("nvram warning"))       // NVRAM WARNING Error pseudo-network
 
                 // lc.endsWith("_nomap")                    // Google unsubscibe option
+        if (DEBUG) Log.d(TAG, "blacklistWifi('" + logString() + "'): blacklisted = $blacklisted")
+        return blacklisted
     }
 
     /**
@@ -517,11 +507,9 @@ class RfEmitter(val type: EmitterType, val id: String) {
     }
 
     companion object {
+        private val DEBUG = BuildConfig.DEBUG
+
         private const val TAG = "DejaVu RfEmitter"
-        private const val SECONDS: Long = 1000 // In milliseconds
-        private const val MINUTES = 60 * SECONDS
-        private const val HOURS = 60 * MINUTES
-        private const val DAYS = HOURS * 24
         private const val METERS: Long = 1
         private const val KM = METERS * 1000
         private const val MINIMUM_TRUST: Long = 0

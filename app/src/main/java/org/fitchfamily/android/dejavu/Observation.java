@@ -37,7 +37,7 @@ import android.support.annotation.NonNull;
  */
 
 public class Observation implements Comparable<Observation> {
-    private final RfIdentification ident;
+    private final RfIdentification identification;
     private int asu;
     private String note;
 
@@ -45,7 +45,7 @@ public class Observation implements Comparable<Observation> {
     private long mElapsedRealtimeNanos;
 
     Observation(String id, EmitterType t) {
-        ident = new RfIdentification(id, t);
+        identification = new RfIdentification(id, t);
         note = "";
         asu = BackendService.MINIMUM_ASU;
         mLastUpdateTimeMs = System.currentTimeMillis();
@@ -55,7 +55,7 @@ public class Observation implements Comparable<Observation> {
     public int compareTo(@NonNull Observation o) {
         int rslt = o.asu - asu;
         if (rslt == 0)
-            rslt = ident.compareTo(o.ident);
+            rslt = identification.compareTo(o.identification);
         return rslt;
     }
 
@@ -72,14 +72,14 @@ public class Observation implements Comparable<Observation> {
     public int hashCode() {
         int result = 1;
 
-        if (ident != null)
-            result = ident.hashCode();
+        if (identification != null)
+            result = identification.hashCode();
         result = (result << 31) + asu;
         return result;
     }
 
-    public RfIdentification getIdent() {
-        return ident;
+    public RfIdentification getIdentification() {
+        return identification;
     }
 
     public void setAsu(int signal) {
@@ -112,6 +112,6 @@ public class Observation implements Comparable<Observation> {
     }
 
     public String toString() {
-        return ident.toString() + ", asu=" + asu + ", note='" + note + "'";
+        return identification.toString() + ", asu=" + asu + ", note='" + note + "'";
     }
 }

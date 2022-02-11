@@ -113,7 +113,7 @@ public class GpsMonitor extends Service implements LocationListener {
     public void onLocationChanged(Location location) {
         // Log.d(TAG, "onLocationChanged()");
         if (location.getProvider().equals("gps")) {
-            BackendService.instanceGpsLocationUpdated(location);
+            BackendService.Companion.instanceGpsLocationUpdated(location);
         }
     }
 
