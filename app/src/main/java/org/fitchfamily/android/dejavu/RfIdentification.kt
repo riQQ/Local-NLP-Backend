@@ -37,30 +37,8 @@ import java.security.MessageDigest
 data class RfIdentification(
         val rfId: String,
         val rfType: EmitterType
-    ) : Comparable<RfIdentification> {
+    ) {
     val uniqueId = generateUniqueId(rfType, rfId)
-
-    override operator fun compareTo(other: RfIdentification): Int {
-        return uniqueId.compareTo(other.uniqueId)
-    }
-
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other !is RfIdentification) return false
-        return uniqueId == other.uniqueId
-    }
-
-    /**
-     * Return a hash code for Android to determine if we are like
-     * some other object. Since we already have a unique ID computed
-     * for our database records, use that but turn it into the int
-     * expected by Android.
-     *
-     * @return Int Android hash code
-     */
-    override fun hashCode(): Int {
-        return uniqueId.hashCode()
-    }
 
     /**
      * Generate a unique string for our RF identification. Using MD5 as it
