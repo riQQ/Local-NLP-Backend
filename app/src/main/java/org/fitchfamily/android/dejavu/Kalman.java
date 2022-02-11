@@ -83,7 +83,7 @@ class Kalman {
     /**
      *  Time of last update. Used to determine how stale our position is.
      */
-    private long mTimeOfUpdate;
+    long timeOfUpdate;
 
     /**
      * Number of samples filter has used.
@@ -120,7 +120,7 @@ class Kalman {
             mAltTracker = new Kalman1Dim(ALTITUDE_NOISE, timeMs);
             mAltTracker.setState(position, 0.0, noise);
         }
-        mTimeOfUpdate = timeMs;
+        timeOfUpdate = timeMs;
         samples = 1;
     }
 
@@ -134,7 +134,7 @@ class Kalman {
         long timeMs = location.getTime();
 
         predict(timeMs);
-        mTimeOfUpdate = timeMs;
+        timeOfUpdate = timeMs;
         samples++;
 
         // Latitude

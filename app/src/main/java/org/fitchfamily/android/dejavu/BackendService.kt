@@ -60,6 +60,7 @@ class BackendService : LocationBackendService() {
         }
     }
     private var gpsLocation: Kalman? = null // Filtered GPS (because GPS is so bad on Moto G4 Play)
+    private var oldLocationUpdate = 0L // store last update of the previous period to allow checking whether gpsLocation has changed
 
     //
     // Periodic process information.
@@ -195,7 +196,7 @@ class BackendService : LocationBackendService() {
     private fun onGpsChanged(update: Location) {
         synchronized(this) {
             if (permissionsOkay && notNullIsland(update)) {
-                //Log.d(TAG, "onGpsChanged() entry.");
+                if (DEBUG) Log.d(TAG, "onGpsChanged() entry.");
                 if (gpsLocation == null)
                     gpsLocation = Kalman(update, GPS_COORDINATE_NOISE)
                 else
@@ -336,9 +337,7 @@ class BackendService : LocationBackendService() {
                 if (mnc == intMax)
                     continue
 
-                val idStr = "LTE" + "/" + id.mcc + "/" +
-                        mnc + "/" + id.ci + "/" +
-                        id.pci + "/" + id.tac
+                val idStr = "LTE/${id.mcc}/$mnc/${id.ci}/${id.pci}/${id.tac}"
                 val asu = info.cellSignalStrength.asuLevel * MAXIMUM_ASU / 97
                 val o = Observation(idStr, EmitterType.MOBILE)
                 o.asu = asu
@@ -355,9 +354,7 @@ class BackendService : LocationBackendService() {
                 if (mnc == intMax)
                     continue
 
-                val idStr = "GSM" + "/" + id.mcc + "/" +
-                        mnc + "/" + id.lac + "/" +
-                        id.cid
+                val idStr = "GSM/${id.mcc}/$mnc/${id.lac}/${id.cid}"
                 val asu = info.cellSignalStrength.asuLevel
                 val o = Observation(idStr, EmitterType.MOBILE)
                 o.asu = asu
@@ -373,9 +370,7 @@ class BackendService : LocationBackendService() {
                 if (mnc == intMax)
                     continue
 
-                val idStr = "WCDMA" + "/" + id.mcc + "/" +
-                        mnc + "/" + id.lac + "/" +
-                        id.cid
+                val idStr = "WCDMA/${id.mcc}/$mnc/${id.lac}/${id.cid}"
                 val asu = info.cellSignalStrength.asuLevel
                 val o = Observation(idStr, EmitterType.MOBILE)
                 o.asu = asu
@@ -388,8 +383,7 @@ class BackendService : LocationBackendService() {
                 if (id.networkId == intMax || id.systemId == intMax || id.basestationId == intMax)
                     continue
 
-                val idStr = "CDMA" + "/" + id.networkId + "/" +
-                        id.systemId + "/" + id.basestationId
+                val idStr = "CDMA/${id.networkId}/${id.systemId}/${id.basestationId}"
                 val asu = info.cellSignalStrength.asuLevel
                 val o = Observation(idStr, EmitterType.MOBILE)
                 o.asu = asu
@@ -420,12 +414,10 @@ class BackendService : LocationBackendService() {
             return observations
         }
         val mcc = mncString.substring(0, 3).toIntOrNull() ?: return observations
-        val mnc= mncString.substring(3).toIntOrNull() ?: return observations
+        val mnc = mncString.substring(3).toIntOrNull() ?: return observations
         val info = telephonyManager!!.cellLocation
         if (info != null && info is GsmCellLocation) {
-            val idStr = "GSM" + "/" + mcc + "/" +
-                    mnc + "/" + info.lac + "/" +
-                    info.cid
+            val idStr = "GSM/$mcc/$mnc/${info.lac}/${info.cid}"
             val o = Observation(idStr, EmitterType.MOBILE)
             o.asu = MINIMUM_ASU
             observations.add(o)
@@ -601,17 +593,17 @@ class BackendService : LocationBackendService() {
         // Check for the end of our collection period. If we are in a new period
         // then finish off the processing for the previous period.
         val currentProcessTime = SystemClock.elapsedRealtime()
-        if (gpsLocation == null) {
-            if (!wifiScanInProgress || currentProcessTime > nextWlanScanTime) {
-                if (DEBUG) Log.d(TAG, "endOfPeriod: wifi scan finished or timed out")
-                nextReportTime = currentProcessTime + REPORTING_INTERVAL
-                endOfPeriodProcessing()
-            }
-        } else if (currentProcessTime > (
-                    if (wifiScanInProgress) // wait until wifi scan should be finished
-                            nextWlanScanTime.coerceAtLeast(nextReportTime)
-                    else nextReportTime)) { // or until next report time
-            if (DEBUG) Log.d(TAG, "endOfPeriod: gps received and report interval over")
+
+        // if a wifi scan is running, wait a bit longer to allow finishing
+        // this helps a lot if a scan is started after end of processing period
+        //  then the results from mobile scan are usually available before wifi scan, and thus
+        //  either a pure mobile location is reported, or a wifi location with old wifis
+        val delayUntil = if (wifiScanInProgress)
+                nextWlanScanTime.coerceAtLeast(nextReportTime)
+            else
+                nextReportTime
+
+        if (currentProcessTime >= delayUntil) {
             nextReportTime = currentProcessTime + REPORTING_INTERVAL
             endOfPeriodProcessing()
         }
@@ -807,9 +799,11 @@ class BackendService : LocationBackendService() {
             for (emitterType in EmitterType.values()) {
                 expectedSet.addAll(getExpected(weightedAverageLocation, emitterType))
             }
-            if (gpsLocation != null) {
+            // only do if gps location has updated since the last period
+            if (gpsLocation?.timeOfUpdate ?: 0 > oldLocationUpdate) {
+                val location = gpsLocation!!.location
                 for (emitterType in EmitterType.values()) {
-                    expectedSet.addAll(getExpected(gpsLocation!!.location, emitterType))
+                    expectedSet.addAll(getExpected(location, emitterType))
                 }
             }
         }
@@ -823,7 +817,7 @@ class BackendService : LocationBackendService() {
         // Sync all of our changes to the on flash database and reset the RF emitters we've seen.
         emitterCache!!.sync()
         seenSet.clear()
-        gpsLocation = null
+        oldLocationUpdate = gpsLocation?.timeOfUpdate ?: 0L
     }
 
     /**
@@ -893,9 +887,10 @@ class BackendService : LocationBackendService() {
         // So these numbers are the minimum time. Actual will be at least that based
         // on when we get GPS locations and/or update requests from microG/UnifiedNlp.
         //
-        private const val REPORTING_INTERVAL: Long = 5000 // in milliseconds
-        private const val MOBILE_SCAN_INTERVAL = REPORTING_INTERVAL / 2 - 100 // in milliseconds
-        private const val WLAN_SCAN_INTERVAL = REPORTING_INTERVAL / 2 - 100 // in milliseconds
+        // values are milliseconds
+        private const val REPORTING_INTERVAL: Long = 3500 // a bit decreased from original
+        private const val MOBILE_SCAN_INTERVAL = REPORTING_INTERVAL / 2 - 100 // scans are rather fast, but are likely to update slowly
+        private const val WLAN_SCAN_INTERVAL = REPORTING_INTERVAL - 100 // scans are slow, ca 2.5 s, and a higher interval does not make sense
         //
         // Other public methods
         //
