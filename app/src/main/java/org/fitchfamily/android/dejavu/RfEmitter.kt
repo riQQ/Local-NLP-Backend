@@ -161,9 +161,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 if (coverage != null) {
                     db.drop(this)
                     coverage = null
-                    if (DEBUG) Log.d(TAG,
-                        "sync('$logString') - Blacklisted dropping from database."
-                    )
+                    if (DEBUG) Log.d(TAG, "sync('$logString') - Blacklisted dropping from database.")
                 }
             EmitterStatus.STATUS_NEW -> {
                 // Not in database, we have location. Add to database
