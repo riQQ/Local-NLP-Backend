@@ -82,7 +82,7 @@ class BackendService : LocationBackendService() {
     private inner class WorkItem(
         var observations: Collection<Observation>,
         var loc: Location?,
-        var time: Long
+        //var time: Long // never actually used
     )
 
     private val workQueue: Queue<WorkItem> = ConcurrentLinkedQueue()
@@ -288,7 +288,7 @@ class BackendService : LocationBackendService() {
         val observations: Collection<Observation> = getMobileTowers()
         if (observations.isNotEmpty()) {
             if (DEBUG) Log.d(TAG, "scanMobile() " + observations.size + " records to be queued for processing.")
-            queueForProcessing(observations, SystemClock.elapsedRealtime())
+            queueForProcessing(observations/*, SystemClock.elapsedRealtime()*/)
         }
     }
 
@@ -510,7 +510,7 @@ class BackendService : LocationBackendService() {
             }
             if (observations.isNotEmpty()) {
                 if (DEBUG) Log.d(TAG, "onWiFisChanged(): " + observations.size + " observations")
-                queueForProcessing(observations, SystemClock.elapsedRealtime())
+                queueForProcessing(observations/*, SystemClock.elapsedRealtime()*/)
             }
             oldScanResults = scanResults
         }
@@ -537,15 +537,15 @@ class BackendService : LocationBackendService() {
      * no thread currently exists, start one.
      *
      * @param observations A set of RF emitter observations (all must be of the same type)
-     * @param timeMs The time the observations were made.
+     * @param timeMs The time the observations were made. (ends up unused, thus commented)
      */
     @Synchronized
-    private fun queueForProcessing(observations: Collection<Observation>, timeMs: Long) {
+    private fun queueForProcessing(observations: Collection<Observation> /*, timeMs: Long*/) {
         val loc = if (gpsLocation != null && notNullIsland(gpsLocation!!.location))
                 gpsLocation!!.location
             else
                 null
-        val work = WorkItem(observations, loc, timeMs)
+        val work = WorkItem(observations, loc /*, timeMs*/)
         workQueue.offer(work)
         if (backgroundThread != null) {
             // Log.d(TAG,"queueForProcessing() - Thread exists.");
@@ -596,7 +596,7 @@ class BackendService : LocationBackendService() {
 
         // Update emitter coverage based on GPS as needed and get the set of locations
         // the emitters are known to be seen at.
-        updateEmitters(emitters, myWork.loc, myWork.time)
+        updateEmitters(emitters, myWork.loc/*, myWork.time*/)
 
         // Check for the end of our collection period. If we are in a new period
         // then finish off the processing for the previous period.
@@ -622,10 +622,10 @@ class BackendService : LocationBackendService() {
      *
      * @param emitters The emitters we have just observed
      * @param gps The GPS position at the time the observations were collected.
-     * @param curTime The time the observations were collected
+     * @param curTime The time the observations were collected (not used, thus commented)
      */
     @Synchronized
-    private fun updateEmitters(emitters: Collection<RfEmitter>, gps: Location?, curTime: Long) {
+    private fun updateEmitters(emitters: Collection<RfEmitter>, gps: Location? /*, curTime: Long*/) {
         if (emitterCache == null) {
             Log.d(TAG, "updateEmitters() - emitterCache is null?!?")
             emitterCache = Cache(this)
