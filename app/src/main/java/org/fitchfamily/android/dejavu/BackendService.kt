@@ -828,6 +828,10 @@ class BackendService : LocationBackendService() {
         ) {
             emitterCache!!.sync() // getExpected() ends bypassing the cache, so sync first
             for (emitterType in EmitterType.values()) {
+                // we create expectedSet exclusively to decrease trust of emitters that are not founf
+                //   so there is no need to add emitters that have
+                if (getRfCharacteristics(emitterType).decreaseTrust == 0)
+                    continue
                 expectedSet.addAll(getExpected(weightedAverageLocation, emitterType))
             }
             // only do if gps location has updated since the last period
