@@ -104,7 +104,7 @@ internal class Cache(context: Context?) {
             val idsToLoad = ids.filterNot { workingSet.containsKey(it.toString()) }
             if (idsToLoad.isEmpty()) return
             val emitters = db!!.getEmitters(idsToLoad)
-            workingSet.putAll(emitters.associateBy { it.uniqueId })
+            workingSet.putAll(emitters.associateBy { it.toString() })
         }
     }
 
