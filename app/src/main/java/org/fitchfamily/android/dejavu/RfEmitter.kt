@@ -531,65 +531,64 @@ class RfEmitter(val type: EmitterType, val id: String) {
          */
         fun getRfCharacteristics(t: EmitterType?): RfCharacteristics =
              when (t) {
-                EmitterType.WLAN_24GHZ ->
-                    // For 2.4 GHz, indoor range seems to be described as about 46 meters
-                    // with outdoor range about 90 meters. Set the minimum range to be about
-                    // 3/4 of the indoor range and the typical range somewhere between
-                    // the indoor and outdoor ranges.
-                    // However we've seem really, really long range detection in rural areas
-                    // so base the move distance on that.
-                    RfCharacteristics(
-                        20F * METERS,
-                        35F * METERS,
-                        65F * METERS,
-                        300F * METERS,  // Seen pretty long detection in very rural areas
-                        0,
-                        REQUIRED_TRUST / 3,
-                        1,
-                        2
-                    )
-                EmitterType.WLAN_5GHZ ->
-                    // For 2.4 GHz, indoor range seems to be described as about 46 meters
-                    // with outdoor range about 90 meters. Set the minimum range to be about
-                    // 3/4 of the indoor range and the typical range somewhere between
-                    // the indoor and outdoor ranges.
-                    // However we've seem really, really long range detection in rural areas
-                    // so base the move distance on that.
-                    RfCharacteristics(
-                        10F * METERS,
-                        15F * METERS,
-                        25F * METERS,
-                        100F * METERS,  // Seen pretty long detection in very rural areas
-                        0,
-                        REQUIRED_TRUST / 3,
-                        1,
-                        2
-                    )
-                EmitterType.MOBILE ->
-                    RfCharacteristics(
-                    100F * METERS,
-                    500F * METERS,
-                    2F * KM,
-                    100F * KM,  // In the desert towers cover large areas
-                    MAXIMUM_TRUST,
-                    MAXIMUM_TRUST,
-                    0,
-                    1
-                )
-                else ->
-                    // Unknown emitter type, just throw out some values that make it unlikely that
-                    // we will ever use it (require too accurate a GPS location, never increment trust, etc.).
-                    RfCharacteristics(
-                    2F * METERS,
-                    50F * METERS,
-                    50F * METERS,
-                    100F * METERS,
-                    0,
-                    0,
-                    1,
-                    99
-                )
+                EmitterType.WLAN_24GHZ -> characteristicsWlan24
+                EmitterType.WLAN_5GHZ -> characteristicsWlan5
+                EmitterType.MOBILE -> characteristicsMobile
+                else -> characteristicsUnknown
             }
+
+        private val characteristicsWlan24 =
+            // For 2.4 GHz, indoor range seems to be described as about 46 meters
+            // with outdoor range about 90 meters. Set the minimum range to be about
+            // 3/4 of the indoor range and the typical range somewhere between
+            // the indoor and outdoor ranges.
+            // However we've seem really, really long range detection in rural areas
+            // so base the move distance on that.
+            RfCharacteristics(
+                20F * METERS,
+                35F * METERS,
+                65F * METERS,
+                300F * METERS,  // Seen pretty long detection in very rural areas
+                0,
+                REQUIRED_TRUST / 3,
+                1,
+                2
+            )
+        private val characteristicsWlan5 =
+            RfCharacteristics(
+                10F * METERS,
+                15F * METERS,
+                25F * METERS,
+                100F * METERS,  // Seen pretty long detection in very rural areas
+                0,
+                REQUIRED_TRUST / 3,
+                1,
+                2
+            )
+        private val characteristicsMobile =
+            RfCharacteristics(
+                100F * METERS,
+                500F * METERS,
+                2F * KM,
+                100F * KM,  // In the desert towers cover large areas
+                MAXIMUM_TRUST,
+                MAXIMUM_TRUST,
+                0,
+                1
+            )
+        private val characteristicsUnknown =
+            // Unknown emitter type, just throw out some values that make it unlikely that
+            // we will ever use it (require too accurate a GPS location, never increment trust, etc.).
+            RfCharacteristics(
+                2F * METERS,
+                50F * METERS,
+                50F * METERS,
+                100F * METERS,
+                0,
+                0,
+                1,
+                99
+            )
     }
 }
 
