@@ -30,6 +30,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import android.provider.Settings
+import android.support.annotation.RequiresApi
 import android.telephony.*
 import android.telephony.gsm.GsmCellLocation
 import android.util.Log
@@ -323,24 +324,33 @@ class BackendService : LocationBackendService() {
         val alternativeMnc by lazy { // determine mnc the other way not more than once per call of getMobileTowers
             val mncString = telephonyManager!!.networkOperator
             if (mncString == null || mncString.length < 5 || mncString.length > 6)
-                intMax
+                null
             else
-                mncString.substring(3).toIntOrNull() ?: intMax
+                mncString.substring(3)
         }
         if (DEBUG) Log.d(TAG, "getMobileTowers(): getAllCellInfo() returned " + allCells.size + " records.")
         for (info in allCells) {
             if (DEBUG) Log.v(TAG, "getMobileTowers(): inputCellInfo: $info")
             if (info is CellInfoLte) {
                 val id = info.cellIdentity
+
+                // get mnc and mcc as strings if available (API 28+)
+                val mncString = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                        id.mncString
+                    else
+                        id.mnc.takeIf { it != intMax }?.toString() ?: continue
+                val mccString = (
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                        id.mccString
+                    else
+                        id.mcc.takeIf { it != intMax }?.toString()
+                        ) ?: alternativeMnc ?: continue
+
                 // CellIdentityLte accessors all state Integer.MAX_VALUE is returned for unknown values.
-                if (id.mcc == intMax || id.ci == intMax || id.pci == intMax || id.tac == intMax) {
-                    continue
-                }
-                val mnc = id.mnc.let { if (it == intMax) alternativeMnc else it }
-                if (mnc == intMax)
+                if (id.ci == intMax || id.pci == intMax || id.tac == intMax)
                     continue
 
-                val idStr = "LTE/${id.mcc}/$mnc/${id.ci}/${id.pci}/${id.tac}"
+                val idStr = "LTE/$mccString/$mncString/${id.ci}/${id.pci}/${id.tac}"
                 val asu = info.cellSignalStrength.asuLevel * MAXIMUM_ASU / 97
                 val o = Observation(idStr, EmitterType.MOBILE, asu)
                 observations.add(o)
@@ -348,15 +358,25 @@ class BackendService : LocationBackendService() {
 
             } else if (info is CellInfoGsm) {
                 val id = info.cellIdentity
+
+                // get mnc and mcc as strings if available (API 28+)
+                val mncString = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                        id.mncString
+                    else
+                        id.mnc.takeIf { it != intMax }?.toString() ?: continue
+                val mccString = (
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                            id.mccString
+                        else
+                            id.mcc.takeIf { it != intMax }?.toString()
+                        ) ?: alternativeMnc ?: continue
+
                 // CellIdentityGsm accessors all state Integer.MAX_VALUE is returned for unknown values.
                 // analysis of results show frequent invalid LAC of 0 messing with results
-                if (id.mcc == intMax || id.lac == intMax || id.lac == 0 || id.cid == intMax)
-                    continue
-                val mnc = id.mnc.let { if (it == intMax) alternativeMnc else it }
-                if (mnc == intMax)
+                if (id.lac == intMax || id.lac == 0 || id.cid == intMax)
                     continue
 
-                val idStr = "GSM/${id.mcc}/$mnc/${id.lac}/${id.cid}"
+                val idStr = "GSM/$mccString/$mncString/${id.lac}/${id.cid}"
                 val asu = info.cellSignalStrength.asuLevel
                 val o = Observation(idStr, EmitterType.MOBILE, asu)
                 observations.add(o)
@@ -364,14 +384,24 @@ class BackendService : LocationBackendService() {
 
             } else if (info is CellInfoWcdma) {
                 val id = info.cellIdentity
+
+                // get mnc and mcc as strings if available (API 28+)
+                val mncString = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                        id.mncString
+                    else
+                        id.mnc.takeIf { it != intMax }?.toString() ?: continue
+                val mccString = (
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                            id.mccString
+                        else
+                            id.mcc.takeIf { it != intMax }?.toString()
+                        ) ?: alternativeMnc ?: continue
+
                 // CellIdentityWcdma accessors all state Integer.MAX_VALUE is returned for unknown values.
-                if (id.mcc == intMax || id.lac == intMax || id.lac == 0 || id.cid == intMax)
-                    continue
-                val mnc = id.mnc.let { if (it == intMax) alternativeMnc else it }
-                if (mnc == intMax)
+                if (id.lac == intMax || id.lac == 0 || id.cid == intMax)
                     continue
 
-                val idStr = "WCDMA/${id.mcc}/$mnc/${id.lac}/${id.cid}"
+                val idStr = "WCDMA/$mccString/$mncString/${id.lac}/${id.cid}"
                 val asu = info.cellSignalStrength.asuLevel
                 val o = Observation(idStr, EmitterType.MOBILE, asu)
                 observations.add(o)
