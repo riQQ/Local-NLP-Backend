@@ -30,7 +30,6 @@ import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import android.provider.Settings
-import android.support.annotation.RequiresApi
 import android.telephony.*
 import android.telephony.gsm.GsmCellLocation
 import android.util.Log
@@ -320,13 +319,10 @@ class BackendService : LocationBackendService() {
         }
         if (allCells.isEmpty()) return deprecatedGetMobileTowers()
 
+        // TODO: mnc can be null... damn
         val intMax = Int.MAX_VALUE
         val alternativeMnc by lazy { // determine mnc the other way not more than once per call of getMobileTowers
-            val mncString = telephonyManager!!.networkOperator
-            if (mncString == null || mncString.length < 5 || mncString.length > 6)
-                null
-            else
-                mncString.substring(3)
+            telephonyManager!!.networkOperator?.let { if (it.length > 5) it.substring(3) else null }
         }
         if (DEBUG) Log.d(TAG, "getMobileTowers(): getAllCellInfo() returned " + allCells.size + " records.")
         for (info in allCells) {
@@ -335,15 +331,15 @@ class BackendService : LocationBackendService() {
                 val id = info.cellIdentity
 
                 // get mnc and mcc as strings if available (API 28+)
-                val mncString = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                val mccString: String = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                        id.mccString ?: continue
+                    else
+                        id.mcc.takeIf { it != intMax }?.toString() ?: continue
+                val mncString: String = (
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
                         id.mncString
                     else
-                        id.mnc.takeIf { it != intMax }?.toString() ?: continue
-                val mccString = (
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-                        id.mccString
-                    else
-                        id.mcc.takeIf { it != intMax }?.toString()
+                        id.mnc.takeIf { it != intMax }?.toString()
                         ) ?: alternativeMnc ?: continue
 
                 // CellIdentityLte accessors all state Integer.MAX_VALUE is returned for unknown values.
@@ -360,15 +356,15 @@ class BackendService : LocationBackendService() {
                 val id = info.cellIdentity
 
                 // get mnc and mcc as strings if available (API 28+)
-                val mncString = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-                        id.mncString
+                val mccString: String = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                        id.mccString ?: continue
                     else
-                        id.mnc.takeIf { it != intMax }?.toString() ?: continue
-                val mccString = (
+                        id.mcc.takeIf { it != intMax }?.toString() ?: continue
+                val mncString: String = (
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-                            id.mccString
+                            id.mncString
                         else
-                            id.mcc.takeIf { it != intMax }?.toString()
+                            id.mnc.takeIf { it != intMax }?.toString()
                         ) ?: alternativeMnc ?: continue
 
                 // CellIdentityGsm accessors all state Integer.MAX_VALUE is returned for unknown values.
@@ -386,15 +382,15 @@ class BackendService : LocationBackendService() {
                 val id = info.cellIdentity
 
                 // get mnc and mcc as strings if available (API 28+)
-                val mncString = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                val mccString: String = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                        id.mccString ?: continue
+                    else
+                        id.mcc.takeIf { it != intMax }?.toString() ?: continue
+                val mncString: String = (
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
                         id.mncString
                     else
-                        id.mnc.takeIf { it != intMax }?.toString() ?: continue
-                val mccString = (
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-                            id.mccString
-                        else
-                            id.mcc.takeIf { it != intMax }?.toString()
+                        id.mnc.takeIf { it != intMax }?.toString()
                         ) ?: alternativeMnc ?: continue
 
                 // CellIdentityWcdma accessors all state Integer.MAX_VALUE is returned for unknown values.
