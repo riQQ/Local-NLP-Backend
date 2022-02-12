@@ -532,16 +532,16 @@ class BackendService : LocationBackendService() {
      */
     @Synchronized
     private fun queueForProcessing(observations: Collection<Observation> /*, timeMs: Long*/) {
+        // TODO: set location null if location is too old?
         val loc = if (gpsLocation != null && notNullIsland(gpsLocation!!.location))
                 gpsLocation!!.location
             else
                 null
         val work = WorkItem(observations, loc /*, timeMs*/)
         workQueue.offer(work)
-        if (backgroundThread != null) {
-            // Log.d(TAG,"queueForProcessing() - Thread exists.");
+        if (backgroundThread != null)
             return
-        }
+        if (DEBUG) Log.d(TAG,"queueForProcessing() - Creating new background thread");
         backgroundThread = Thread { // TODO: coroutine?
             var myWork = workQueue.poll()
             while (myWork != null) {
