@@ -335,7 +335,7 @@ class Database(context: Context?) :
      * @return A collection of RF emitter identifications
      */
     fun getEmitters(rfType: EmitterType, bb: BoundingBox): HashSet<RfIdentification> {
-        val rslt = HashSet<RfIdentification>()
+        val result = HashSet<RfIdentification>()
         val query = ("SELECT " +
                 COL_RFID + " " +
                 " FROM " + TABLE_SAMPLES +
@@ -346,23 +346,20 @@ class Database(context: Context?) :
                 "' AND " + COL_LON + "<='" + bb.east + "';")
 
         //Log.d(TAG, "getEmitters(): query='"+query+"'");
-        val cursor = readableDatabase.rawQuery(query, null)
-        try {
+        readableDatabase.rawQuery(query, null).use { cursor ->
             if (cursor!!.moveToFirst()) {
                 do {
                     val e = RfIdentification(cursor.getString(0), rfType)
-                    rslt.add(e)
+                    result.add(e)
                 } while (cursor.moveToNext())
             }
-        } finally {
-            cursor?.close()
         }
-        return rslt
+        return result
     }
 
     // get multple emimtters in a single query
     fun getEmitters(ids: Collection<RfIdentification>): List<RfEmitter> {
-        val idString = ids.map { "'${it.uniqueId}'" }.joinToString(",")
+        val idString = ids.joinToString(",") { "'${it.uniqueId}'" }
         val query = ("SELECT " +
                 COL_TYPE + ", " +
                 COL_TRUST + ", " +
@@ -375,7 +372,7 @@ class Database(context: Context?) :
                 " FROM " + TABLE_SAMPLES +
                 " WHERE " + COL_HASH + " IN (" + idString + ");")
 
-        // Log.d(TAG, "getEmitter(): query='"+query+"'");
+        if (DEBUG) Log.d(TAG, "getEmitters()")
         val c = readableDatabase.rawQuery(query, null)
         val emitters = mutableListOf<RfEmitter>()
         c.use { cursor ->
@@ -401,11 +398,11 @@ class Database(context: Context?) :
     /**
      * Get all the information we have on an RF emitter
      *
-     * @param ident The identification of the emitter caller wants
+     * @param identification The identification of the emitter caller wants
      * @return A emitter object with all the information we have. Or null if we have nothing.
      */
-    fun getEmitter(ident: RfIdentification): RfEmitter? {
-        var result: RfEmitter? = null
+    fun getEmitter(identification: RfIdentification): RfEmitter? {
+        val result: RfEmitter?
         val query = ("SELECT " +
                 COL_TYPE + ", " +
                 COL_TRUST + ", " +
@@ -415,13 +412,12 @@ class Database(context: Context?) :
                 COL_RAD_EW + ", " +
                 COL_NOTE + " " +
                 " FROM " + TABLE_SAMPLES +
-                " WHERE " + COL_HASH + "='" + ident.uniqueId + "';")
+                " WHERE " + COL_HASH + "='" + identification.uniqueId + "';")
 
-        // Log.d(TAG, "getEmitter(): query='"+query+"'");
-        val cursor = readableDatabase.rawQuery(query, null)
-        try {
+        if (DEBUG) Log.d(TAG, "getEmitter(): $identification");
+        readableDatabase.rawQuery(query, null).use { cursor ->
             if (cursor!!.moveToFirst()) {
-                result = RfEmitter(ident)
+                result = RfEmitter(identification)
                 val ei = EmitterInfo()
                 ei.trust = cursor.getInt(1)
                 ei.latitude = cursor.getDouble(2)
@@ -431,8 +427,7 @@ class Database(context: Context?) :
                 ei.note = cursor.getString(6) ?: ""
                 result.updateInfo(ei)
             }
-        } finally {
-            cursor?.close()
+            else result = null
         }
         return result
     }
