@@ -38,37 +38,11 @@ data class RfIdentification(
         val rfId: String,
         val rfType: EmitterType
     ) {
-    val uniqueId = generateUniqueId(rfType, rfId)
+    // the string is already unique, and the hash isn't any shorter
+    val uniqueId = toString()
 
-    /**
-     * Generate a unique string for our RF identification. Using MD5 as it
-     * ought not have collisions but is relatively cheap to compute. Since
-     * we aren't doing cryptography here we need not worry about it being
-     * a secure hash.
-     *
-     * @param rfType The type of emitter
-     * @param rfIdent The ID string unique to the type of emitter
-     * @return String A unique identification string
-     */
-    private fun generateUniqueId(rfType: EmitterType, rfIdent: String): String {
-        var hashtext = "$rfType:$rfIdent"
-        try {
-            val bytes = hashtext.toByteArray(Charsets.UTF_8)
-            val md = MessageDigest.getInstance("MD5")
-            val digest = md.digest(bytes)
-            val bigInt = BigInteger(1, digest)
-            hashtext = bigInt.toString(16)
-            while (hashtext.length < 32) {
-                hashtext = "0$hashtext"
-            }
-        } catch (e: Exception) {
-            Log.d(TAG, "genUniqueId(): Exception" + e.message)
-        }
-        return hashtext
-    }
-
-    companion object {
-        private const val TAG = "DejaVu RfIdent"
-    }
+    override fun toString(): String =
+        if (rfType == EmitterType.MOBILE) rfId
+        else rfType.name + '|' + rfId
 
 }

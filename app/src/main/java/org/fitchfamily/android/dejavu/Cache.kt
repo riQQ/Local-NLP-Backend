@@ -84,7 +84,7 @@ internal class Cache(context: Context?) {
         synchronized(this) {
             if (db == null)
                 return null
-            val key = id.toString()
+            val key = id.uniqueId
             var result = workingSet[key]
             if (result == null) {
                 result = db!!.getEmitter(id)
@@ -101,10 +101,10 @@ internal class Cache(context: Context?) {
     fun loadIds(ids: Collection<RfIdentification>) {
         synchronized(this) {
             if (db == null) return
-            val idsToLoad = ids.filterNot { workingSet.containsKey(it.toString()) }
+            val idsToLoad = ids.filterNot { workingSet.containsKey(it.uniqueId) }
             if (idsToLoad.isEmpty()) return
             val emitters = db!!.getEmitters(idsToLoad)
-            workingSet.putAll(emitters.associateBy { it.toString() })
+            workingSet.putAll(emitters.associateBy { it.uniqueId })
         }
     }
 
@@ -152,7 +152,7 @@ internal class Cache(context: Context?) {
 
             // Remove aged out items from cache
             for (id in agedSet) {
-                val key = id.toString()
+                val key = id.uniqueId
                 if (DEBUG) Log.d(TAG, "sync('$key') - Aged out, removed from cache.")
                 workingSet.remove(key)
             }
