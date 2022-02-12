@@ -826,10 +826,17 @@ class BackendService : LocationBackendService() {
         if (weightedAverageLocation != null // getExpected is slow when the database is large, so don't check every time
             && (getRfLocations(seenSet).size - locations!!.size > 2 || SystemClock.elapsedRealtime() % 8 == 1L)
         ) {
+            // we create expectedSet exclusively to decrease trust of emitters that are not founf
+            //   so there is no need to add emitters that have
+            // TODO 1: there should be more type like lte or 5g
+            // TODO 2: limit to types the device is (currently) capable of?
+            //  e.g. don't look for LTE if the device is not LTE capable, or it is switched to 2g only
+            //  also don't look for wifis if wifi is off!
+            //   this is important...
+            //   how to detect difference between wifi off and wifi really off (no background scanning)?
+            //   plus, wifis should be skipped if last scan was found to have returned an old list
             emitterCache!!.sync() // getExpected() ends bypassing the cache, so sync first
             for (emitterType in EmitterType.values()) {
-                // we create expectedSet exclusively to decrease trust of emitters that are not founf
-                //   so there is no need to add emitters that have
                 if (getRfCharacteristics(emitterType).decreaseTrust == 0)
                     continue
                 expectedSet.addAll(getExpected(weightedAverageLocation, emitterType))
@@ -838,6 +845,8 @@ class BackendService : LocationBackendService() {
             if (gpsLocation?.timeOfUpdate ?: 0 > oldLocationUpdate) {
                 val location = gpsLocation!!.location
                 for (emitterType in EmitterType.values()) {
+                    if (getRfCharacteristics(emitterType).decreaseTrust == 0)
+                        continue
                     expectedSet.addAll(getExpected(location, emitterType))
                 }
             }
