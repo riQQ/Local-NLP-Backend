@@ -22,7 +22,6 @@ package org.fitchfamily.android.dejavu
 import android.location.Location
 import android.os.Bundle
 import android.util.Log
-import org.fitchfamily.android.dejavu.Database.EmitterInfo
 
 /**
  * Created by tfitch on 8/27/17.

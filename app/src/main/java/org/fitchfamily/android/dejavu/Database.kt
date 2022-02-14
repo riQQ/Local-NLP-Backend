@@ -44,15 +44,6 @@ class Database(context: Context?) :
     private var sqlSampleUpdate: SQLiteStatement? = null
     private var sqlAPdrop: SQLiteStatement? = null
 
-    inner class EmitterInfo() {
-        var latitude = 0.0
-        var longitude = 0.0
-        var radius_ns = 0f
-        var radius_ew = 0f
-        var trust: Int = 0
-        var note: String = ""
-    }
-
     override fun onCreate(db: SQLiteDatabase) {
         database = db
         withinTransaction = false
@@ -387,6 +378,7 @@ class Database(context: Context?) :
 
     // get multple emimtters in a single query
     fun getEmitters(ids: Collection<RfIdentification>): List<RfEmitter> {
+        if (ids.isEmpty()) return emptyList()
         val idString = ids.joinToString(",") { "'${it.uniqueId}'" }
         val query = ("SELECT " +
                 COL_TYPE + ", " +
@@ -407,13 +399,14 @@ class Database(context: Context?) :
             if (cursor!!.moveToFirst()) {
                 do {
                     val result = emitterFromDb(EmitterType.valueOf(cursor.getString(0)), cursor.getString(7))
-                    val ei = EmitterInfo()
-                    ei.trust = cursor.getInt(1)
-                    ei.latitude = cursor.getDouble(2)
-                    ei.longitude = cursor.getDouble(3)
-                    ei.radius_ns = cursor.getDouble(4).toFloat()
-                    ei.radius_ew = cursor.getDouble(5).toFloat()
-                    ei.note = cursor.getString(6) ?: ""
+                    val ei = EmitterInfo(
+                        trust = cursor.getInt(1),
+                        latitude = cursor.getDouble(2),
+                        longitude = cursor.getDouble(3),
+                        radius_ns = cursor.getDouble(4).toFloat(),
+                        radius_ew = cursor.getDouble(5).toFloat(),
+                        note = cursor.getString(6) ?: ""
+                    )
                     result.updateInfo(ei)
                     emitters.add(result)
                 } while (cursor.moveToNext())
@@ -455,13 +448,14 @@ class Database(context: Context?) :
         readableDatabase.rawQuery(query, null).use { cursor ->
             if (cursor!!.moveToFirst()) {
                 result = RfEmitter(identification)
-                val ei = EmitterInfo()
-                ei.trust = cursor.getInt(1)
-                ei.latitude = cursor.getDouble(2)
-                ei.longitude = cursor.getDouble(3)
-                ei.radius_ns = cursor.getDouble(4).toFloat()
-                ei.radius_ew = cursor.getDouble(5).toFloat()
-                ei.note = cursor.getString(6) ?: ""
+                val ei = EmitterInfo(
+                    trust = cursor.getInt(1),
+                    latitude = cursor.getDouble(2),
+                    longitude = cursor.getDouble(3),
+                    radius_ns = cursor.getDouble(4).toFloat(),
+                    radius_ew = cursor.getDouble(5).toFloat(),
+                    note = cursor.getString(6) ?: ""
+                )
                 result.updateInfo(ei)
             }
             else result = null
@@ -488,3 +482,12 @@ class Database(context: Context?) :
         private const val COL_NOTE = "note"
     }
 }
+
+class EmitterInfo(
+    val trust: Int = 0,
+    val latitude: Double = 0.0,
+    val longitude: Double = 0.0,
+    val radius_ns: Float = 0f,
+    val radius_ew: Float = 0f,
+    val note: String = ""
+)

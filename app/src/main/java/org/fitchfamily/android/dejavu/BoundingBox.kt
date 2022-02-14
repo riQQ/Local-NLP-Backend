@@ -20,7 +20,6 @@ package org.fitchfamily.android.dejavu
 */
 
 import android.location.Location
-import org.fitchfamily.android.dejavu.Database.EmitterInfo
 import kotlin.math.cos
 import kotlin.math.sqrt
 
