@@ -307,12 +307,13 @@ class BackendService : LocationBackendService() {
     private fun getMobileTowers(): Set<Observation> {
         if (telephonyManager == null) {
             telephonyManager = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
+            if (DEBUG) Log.d(TAG, "getMobileTowers(): telephony manager was null")
         }
         val observations = hashSetOf<Observation>()
 
         // Try most recent API to get all cell information
         val allCells: List<CellInfo> = try {
-            telephonyManager!!.allCellInfo
+            telephonyManager!!.allCellInfo ?: emptyList()
         } catch (e: NoSuchMethodError) {
             emptyList()
             // Log.d(TAG, "getMobileTowers(): no such method: getAllCellInfo().");
@@ -634,7 +635,8 @@ class BackendService : LocationBackendService() {
         if (currentProcessTime >= delayUntil) {
             nextReportTime = currentProcessTime + REPORTING_INTERVAL
             endOfPeriodProcessing()
-        }
+        } else if (DEBUG && currentProcessTime > nextReportTime)
+            Log.d(TAG, "backgroundProcessing() - Delaying endOfPeriodProcessing because WiFi scan in progress")
     }
 
     /**
@@ -662,9 +664,10 @@ class BackendService : LocationBackendService() {
      * @param rfIds IDs of the emitters desired
      * @return A list of the coverage areas for the emitters
      */
-    private fun getRfLocations(rfIds: Collection<RfIdentification>?): List<Location> {
+    private fun getRfLocations(rfIds: Collection<RfIdentification>): List<Location> {
         val locations = LinkedList<Location>()
-        for (id in rfIds!!) {
+        emitterCache!!.loadIds(rfIds)
+        for (id in rfIds) {
             val emitter = emitterCache!![id]
             if (emitter != null) {
                 val location = emitter.location
@@ -826,9 +829,9 @@ class BackendService : LocationBackendService() {
         if (weightedAverageLocation != null // getExpected is slow when the database is large, so don't check every time
             && (getRfLocations(seenSet).size - locations!!.size > 2 || SystemClock.elapsedRealtime() % 8 == 1L)
         ) {
-            // we create expectedSet exclusively to decrease trust of emitters that are not founf
+            // we create expectedSet exclusively to decrease trust of emitters that are not found
             //   so there is no need to add emitters that have
-            // TODO 1: there should be more type like lte or 5g
+            // TODO 1: there should be more type like lte or 5g instead of just mobile
             // TODO 2: limit to types the device is (currently) capable of?
             //  e.g. don't look for LTE if the device is not LTE capable, or it is switched to 2g only
             //  also don't look for wifis if wifi is off!
@@ -850,6 +853,7 @@ class BackendService : LocationBackendService() {
                     expectedSet.addAll(getExpected(location, emitterType))
                 }
             }
+            emitterCache!!.loadIds(expectedSet)
         }
         for (identification in expectedSet) {
             if (!seenSet.contains(identification)) {
@@ -932,7 +936,7 @@ class BackendService : LocationBackendService() {
         // on when we get GPS locations and/or update requests from microG/UnifiedNlp.
         //
         // values are milliseconds
-        private const val REPORTING_INTERVAL: Long = 3500 // a bit decreased from original
+        private const val REPORTING_INTERVAL: Long = 3500 // a bit increased from original
         private const val MOBILE_SCAN_INTERVAL = REPORTING_INTERVAL / 2 - 100 // scans are rather fast, but are likely to update slowly
         private const val WLAN_SCAN_INTERVAL = REPORTING_INTERVAL - 100 // scans are slow, ca 2.5 s, and a higher interval does not make sense
         //

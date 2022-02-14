@@ -51,6 +51,14 @@ class RfEmitter(val type: EmitterType, val id: String) {
         lastObservation = observation
     }
 
+    internal constructor(identification: RfIdentification, emitterInfo: EmitterInfo) : this(identification.rfType, identification.rfId, emitterInfo)
+
+    internal constructor(type: EmitterType, id: String, emitterInfo: EmitterInfo) : this(type, id) {
+        coverage = BoundingBox(emitterInfo)
+        trust = emitterInfo.trust
+        status = EmitterStatus.STATUS_CACHED
+    }
+
     private val ourCharacteristics = getRfCharacteristics(type)
     var trust: Int = ourCharacteristics.discoveryTrust
         private set

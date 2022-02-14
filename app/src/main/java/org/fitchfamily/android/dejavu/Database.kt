@@ -376,7 +376,7 @@ class Database(context: Context?) :
         return result
     }
 
-    // get multple emimtters in a single query
+    // get multiple emitters instead of querying one by one
     fun getEmitters(ids: Collection<RfIdentification>): List<RfEmitter> {
         if (ids.isEmpty()) return emptyList()
         val idString = ids.joinToString(",") { "'${it.uniqueId}'" }
@@ -398,7 +398,6 @@ class Database(context: Context?) :
         c.use { cursor ->
             if (cursor!!.moveToFirst()) {
                 do {
-                    val result = emitterFromDb(EmitterType.valueOf(cursor.getString(0)), cursor.getString(7))
                     val ei = EmitterInfo(
                         trust = cursor.getInt(1),
                         latitude = cursor.getDouble(2),
@@ -407,7 +406,7 @@ class Database(context: Context?) :
                         radius_ew = cursor.getDouble(5).toFloat(),
                         note = cursor.getString(6) ?: ""
                     )
-                    result.updateInfo(ei)
+                    val result = emitterFromDb(EmitterType.valueOf(cursor.getString(0)), cursor.getString(7), ei)
                     emitters.add(result)
                 } while (cursor.moveToNext())
             }
@@ -419,11 +418,11 @@ class Database(context: Context?) :
         return emitters
     }
 
-    private fun emitterFromDb(type: EmitterType, dbId: String): RfEmitter =
+    private fun emitterFromDb(type: EmitterType, dbId: String, emitterInfo: EmitterInfo): RfEmitter =
         if (type == EmitterType.MOBILE)
             RfEmitter(type, dbId)
         else
-            RfEmitter(type, dbId.substringAfter('|'))
+            RfEmitter(type, dbId.substringAfter('|'), emitterInfo)
 
     /**
      * Get all the information we have on an RF emitter
@@ -447,7 +446,6 @@ class Database(context: Context?) :
         if (DEBUG) Log.d(TAG, "getEmitter(): $identification");
         readableDatabase.rawQuery(query, null).use { cursor ->
             if (cursor!!.moveToFirst()) {
-                result = RfEmitter(identification)
                 val ei = EmitterInfo(
                     trust = cursor.getInt(1),
                     latitude = cursor.getDouble(2),
@@ -456,7 +454,7 @@ class Database(context: Context?) :
                     radius_ew = cursor.getDouble(5).toFloat(),
                     note = cursor.getString(6) ?: ""
                 )
-                result.updateInfo(ei)
+                result = RfEmitter(identification, ei)
             }
             else result = null
         }

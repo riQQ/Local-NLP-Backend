@@ -73,9 +73,13 @@ internal class Cache(context: Context?) {
     /**
      * Queries the cache with the given RfIdentification.
      *
-     * If the emitter does not exist in the cache, it is
-     * added (from the database if known or a new "unknown"
-     * entry is created).
+     * If the emitter does not exist in the cache, a new
+     * a new "unknown" entry is created.
+     * It is NOT fetched from database in this case.
+     * This should be done be calling loadIds before cache.get,
+     * because fetching emitters one by one is slower than
+     * getting all at once. And cache.get is ALWAYS called
+     * in a loop over many ids
      *
      * @param id
      * @return the emitter
@@ -85,20 +89,24 @@ internal class Cache(context: Context?) {
             if (db == null)
                 return null
             val key = id.uniqueId
-            var result = workingSet[key]
+            return workingSet[key]?.apply { resetAge() } ?: run {
+                val result = RfEmitter(id)
+                workingSet[key] = result
+                result
+            }
+/*            var result = workingSet[key]
             if (result == null) {
-                result = db!!.getEmitter(id)
-                if (result == null)
                     result = RfEmitter(id)
                 workingSet[key] = result
-                if (DEBUG) Log.d(TAG, "get('$key') - Added to cache.")
+                if (DEBUG) Log.d(TAG, "get('$key') - Added new emitter to cache.")
             }
             result.resetAge()
             return result
-        }
+*/        }
     }
 
     fun loadIds(ids: Collection<RfIdentification>) {
+        if (DEBUG) Log.d(TAG, "loadIds() - Fetching ids not in working set from db.")
         synchronized(this) {
             if (db == null) return
             val idsToLoad = ids.filterNot { workingSet.containsKey(it.uniqueId) }
