@@ -90,7 +90,7 @@ class BackendService : LocationBackendService() {
     private var oldScanResults = listOf<ScanResult>()
 
     private val airplaneMode get() = Settings.Global.getInt(applicationContext.contentResolver,
-        Settings.Global.AIRPLANE_MODE_ON, 0)
+        Settings.Global.AIRPLANE_MODE_ON, 0) != 0
 
     /**
      * We are starting to run, get the resources we need to do our job.
@@ -220,7 +220,7 @@ class BackendService : LocationBackendService() {
 
             if (DEBUG) Log.d(TAG, "scanAllSensors() - starting scans")
             startWiFiScan()
-            if (airplaneMode == 0)
+            if (!airplaneMode)
                 startMobileScan()
             else
                 if (DEBUG) Log.d(TAG, "scanAllSensors() - airplane mode enabled, not scanning for mobile towers")
@@ -824,32 +824,34 @@ class BackendService : LocationBackendService() {
         // If we are dealing with very movable emitters, then try to detect ones that
         // have moved out of the area. We do that by collecting the set of emitters
         // that we expected to see in this area based on the GPS and our own location
-        // computation.
+        // computation and decrease trust of all emitters we expected, but did not find.
+        // getExpected() ends bypassing the cache, thus emitters added in this period (since
+        // the last sync) are not found. However, the ARE in the seenSet, so we never
+        // decrease trust for them anyway and. So syncing emitter cache before creating
+        // the expectedSet is not necessary.
         val expectedSet: MutableSet<RfIdentification> = HashSet()
         if (weightedAverageLocation != null // getExpected is slow when the database is large, so don't check every time
             && (getRfLocations(seenSet).size - locations!!.size > 2 || SystemClock.elapsedRealtime() % 8 == 1L)
         ) {
-            // we create expectedSet exclusively to decrease trust of emitters that are not found
-            //   so there is no need to add emitters that have
-            // TODO 1: there should be more type like lte or 5g instead of just mobile
-            // TODO 2: limit to types the device is (currently) capable of?
+            // we create expectedSet exclusively to decrease trust of emitters that are not found,
+            // so there is no need to add emitters that cannot decrease trust
+            // TODO: limit to types the device is (currently) capable of
             //  e.g. don't look for LTE if the device is not LTE capable, or it is switched to 2g only
             //  also don't look for wifis if wifi is off!
-            //   this is important...
+            //   this is important
             //   how to detect difference between wifi off and wifi really off (no background scanning)?
             //   plus, wifis should be skipped if last scan was found to have returned an old list
-            emitterCache!!.sync() // getExpected() ends bypassing the cache, so sync first
-            for (emitterType in EmitterType.values()) {
-                if (getRfCharacteristics(emitterType).decreaseTrust == 0)
-                    continue
+            // TODO: this is neither completed nor tested!
+            // wifi scan is possible if wifi is enabled or background scan is enabled AND airplane mode disabled
+            val canScanWifi = wifiManager?.let { it.isWifiEnabled || (it.isScanAlwaysAvailable && !airplaneMode) } ?: true
+
+            for (emitterType in emittersThatCanDecreaseTrust) {
                 expectedSet.addAll(getExpected(weightedAverageLocation, emitterType))
             }
             // only do if gps location has updated since the last period
             if (gpsLocation?.timeOfUpdate ?: 0 > oldLocationUpdate) {
                 val location = gpsLocation!!.location
-                for (emitterType in EmitterType.values()) {
-                    if (getRfCharacteristics(emitterType).decreaseTrust == 0)
-                        continue
+                for (emitterType in emittersThatCanDecreaseTrust) {
                     expectedSet.addAll(getExpected(location, emitterType))
                 }
             }
@@ -974,6 +976,10 @@ class BackendService : LocationBackendService() {
                 else
                     sr.frequency
             return freq > 2500
+        }
+
+        private val emittersThatCanDecreaseTrust = EmitterType.values().filter {
+            getRfCharacteristics(it).decreaseTrust != 0
         }
     }
 }
