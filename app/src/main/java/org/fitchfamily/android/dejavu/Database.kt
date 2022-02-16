@@ -207,7 +207,7 @@ class Database(context: Context?) :
         // add 2.4 GHz WiFis
         db.execSQL("""
             INSERT INTO ${TABLE_SAMPLES}_new($COL_RFID, $COL_TYPE, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE)
-            SELECT $COL_TYPE || '/' || $COL_RFID, ${EmitterType.WLAN2.ordinal}, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
+            SELECT '${EmitterType.WLAN2}/' || $COL_RFID, ${EmitterType.WLAN2.ordinal}, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
             FROM $TABLE_SAMPLES
             WHERE $COL_TYPE = 'WLAN_24GHZ';
         """.trimIndent()
@@ -215,7 +215,7 @@ class Database(context: Context?) :
         // add 5 GHz WiFis
         db.execSQL("""
             INSERT INTO ${TABLE_SAMPLES}_new($COL_RFID, $COL_TYPE, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE)
-            SELECT ${EmitterType.WLAN5} || '/' || $COL_RFID, ${EmitterType.WLAN5.ordinal}, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
+            SELECT '${EmitterType.WLAN5}/' || $COL_RFID, ${EmitterType.WLAN5.ordinal}, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
             FROM $TABLE_SAMPLES
             WHERE $COL_TYPE = 'WLAN_5GHZ';
         """.trimIndent()
@@ -428,7 +428,7 @@ class Database(context: Context?) :
                     val result = RfEmitter(
                         getRfId(
                             cursor.getString(7),
-                            EmitterType.valueOf(cursor.getString(0))
+                            EmitterType.values()[cursor.getInt(0)]
                         ), info)
                     emitters.add(result)
                 } while (cursor.moveToNext())
