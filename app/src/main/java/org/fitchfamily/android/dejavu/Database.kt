@@ -344,7 +344,7 @@ class Database(context: Context?) :
      * @param emitter The emitter to be updated
      */
     fun update(emitter: RfEmitter) {
-        if (DEBUG) Log.d(TAG, "Updating " + emitter.logString + " in db")
+        if (DEBUG) Log.d(TAG, "Updating " + emitter.logString)
 
         // the data fields
         sqlSampleUpdate!!.bindString(1, emitter.trust.toString())
