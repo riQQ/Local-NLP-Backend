@@ -137,7 +137,7 @@ internal class Cache(context: Context?) {
         synchronized(this) {
             val emittersInNeedOfSync = workingSet.values.filter { it.syncNeeded() }
             if (emittersInNeedOfSync.isNotEmpty()) {
-                if (DEBUG) Log.d(TAG, "sync() - syncing emitters with db")
+                if (DEBUG) Log.d(TAG, "sync() - syncing ${emittersInNeedOfSync.size} emitters with db")
                 db!!.beginTransaction()
                 emittersInNeedOfSync.forEach {
                     it.sync(db!!)

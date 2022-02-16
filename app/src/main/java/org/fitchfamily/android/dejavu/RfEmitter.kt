@@ -367,8 +367,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
         val lc = note?.lowercase() ?: return false
 
         // split lc into continuous occurrences of a-z
-        // most 'contains' checks below only make sense if the string is a separate word
-        // this accelerates comparison a lot, at the risk of missing some strings
+        // most 'contains' checks only make sense if the string is a separate word
+        // this accelerates comparison a lot, at the risk of missing some wifis
         val lcSplit = lc.split(splitRegex)
 
         // Seen a large number of WiFi networks where the SSID is the last
@@ -378,93 +378,23 @@ class RfEmitter(val type: EmitterType, val id: String) {
         val macSuffix =
             id.substring(id.length - 8).lowercase().replace(":", "")
 
-        // TODO: re-work blacklist, divide into sub-lists like startsWith, contains, endsWith, containsWord
-        val blacklisted = (
-                // Mobile phone brands
-                lcSplit.contains("android") ||          // mobile tethering
-                lcSplit.contains("ipad") ||             // mobile tethering
-                lcSplit.contains("phone") ||            // mobile tethering
-                lcSplit.contains("motorola") ||         // mobile tethering
-                lc.startsWith("moto ") ||        // "Moto E (4) 9509" seen
-                note?.startsWith("MOTO") == true ||       // "MOTO9564" and "MOTO9916" seen
-                lc.startsWith("samsung galaxy") ||  // mobile tethering
-                lc.startsWith("lg aristo") ||    // "LG Aristo 7124" seen
+        val blacklisted =
+            lcSplit.any { blacklistWords.contains(it) } // probably better than other way round, because fewer checks
+                || blacklistEquals.contains(lc)
+                || blacklistStartsWith.any { lc.startsWith(it) }
+                || blacklistEndsWith.any { lc.endsWith(it) }
+                //|| blacklistContains.any { lc.contains(it) } // don't use this! better split it up
+                // a few less simple checks
+                || note?.startsWith("MOTO") == true        // "MOTO9564" and "MOTO9916" seen
+                || lcSplit.first() == "audi" // some cars seem to have this AP on-board
+                || lc == macSuffix // Apparent default SSID name for many cars
+                || (lcSplit.contains("admin") && lc.contains("admin@ms")) // simple contains should be avoided
+                || (lcSplit.contains("guest") && lc.contains("guest@ms")) // so only do it if words admin or guest found
+                || (lcSplit.contains("contiki") && lc.contains("contiki-wifi")) // transport
+                || (lcSplit.contains("interakti") && lc.contains("nsb_interakti")) // ???
+                || (lcSplit.contains("nvram") && lc.contains("nvram warning")) // transport
 
-                // Mobile network brands
-                lc.startsWith("cellspot") ||     // T-Mobile US portable cell based WiFi
-                lc.startsWith("verizon-") ||     // Verizon mobile hotspot
-
-                // Per some instructional videos on YouTube, recent (2015 and later)
-                // General Motors built vehicles come with a default WiFi SSID of the
-                // form "WiFi Hotspot 1234" where the 1234 is different for each car.
-                // The SSID can be changed but the recommended SSID to change to
-                // is of the form "first_name vehicle_model" (e.g. "Bryces Silverado").
-                lc.startsWith("wifi hotspot ") ||   // Default GM vehicle WiFi name
-                lc.endsWith("corvette") ||          // Chevy Corvette. "TS Corvette" seen.
-                lc.endsWith("silverado") ||         // GMC Silverado. "Bryces Silverado" seen.
-                lc.endsWith("chevy") ||             // Chevrolet. "Davids Chevy" seen
-                lc.endsWith("truck") ||             // "Morgans Truck" and "Wally Truck" seen
-                lc.endsWith("suburban") ||          // Chevy/GMC Suburban. "Laura Suburban" seen
-                lc.endsWith("terrain") ||           // GMC Terrain. "Nelson Terrain" seen
-                lc.endsWith("sierra") ||            // GMC pickup. "dees sierra" seen
-
-                // Per an instructional video on YouTube, recent (2014 and later) Chrysler-Fiat
-                // vehicles have a SSID of the form "Chrysler uconnect xxxxxx" where xxxxxx
-                // seems to be a hex digit string (suffix of BSSID?).
-                lcSplit.contains("uconnect") ||           // Chrysler built vehicles
-
-                // Per instructional video on YouTube, Mercedes cars have and SSID of
-
-                lc.startsWith("mb wlan ") ||         // "MB WLAN nnnnn" where nnnnn is a 5 digit number.
-                (lc == macSuffix) ||                       // Apparent default SSID name for many cars
-                note?.startsWith("Audi") == true || // some cars seem to have this AP on-board
-                lc.startsWith("chevy ") ||          // "Chevy Cruz 7774" seen.
-                lc.startsWith("gmc wifi") ||        // General Motors
-                lc.startsWith("myvolvo") ||         // Volvo in car WiFi
-
-                // Transit agencies
-                lc.startsWith("westbahn ") ||       // WLAN network on Austrian Westbahn trains
-                lc.startsWith("regiojet") ||        // WLAN network on Czech RegioJet
-                lc.contains("admin@ms ") ||         // WLAN network on Hurtigruten ships
-                lc.contains("contiki-wifi") ||      // WLAN network on board of bus
-                lc.contains("db ic bus") ||         // WLAN network on board of German bus
-                lcSplit.contains("deinbus") ||            // WLAN network on board of German bus
-                lcSplit.contains("ecolines") ||           // WLAN network on board of German bus
-                lcSplit.contains("eurolines") ||          // WLAN network on board of German bus
-                lcSplit.contains("fernbus") ||            // WLAN network on board of German bus
-                lcSplit.contains("flixbus") ||            // WLAN network on board of German bus
-                lc.contains("guest@ms ") ||         // WLAN network on Hurtigruten ships
-                lcSplit.contains("muenchenlinie") ||      // WLAN network on board of bus
-                lcSplit.contains("postbus") ||            // WLAN network on board of bus line
-                lc.contains("telekom_ice") ||       // WLAN network on DB trains
-                lcSplit.contains("skanetrafiken") ||      // WLAN network on Skånetrafiken (Sweden) buses and trains
-                lcSplit.contains("oresundstag") ||        // WLAN network on Øresundståg (Sweden/Denmark) trains
-                lc == "amtrak" ||                         // WLAN network on USA Amtrak trains
-                lc == "amtrakconnect" ||                  // WLAN network on USA Amtrak trains
-                lc == "cdwifi" ||                         // WLAN network on Czech railways
-                lc == "megabus" ||                        // WLAN network on MegaBus US bus
-                lc == "westlan" ||                        // WLAN network on Austrian railways
-                lc == "wifi in de trein" ||               // WLAN network on Dutch railway
-                lc == "svciob" ||                         // WLAN network on Austrian railway
-                lc == "oebb" ||                           // WLAN network on Austrian Oebb trains
-                lc == "oebb-postbus" ||                   // WLAN network on Austrian Oebb buses
-                lc == "dpmbfree" ||                       // WLAN network on Czech public transport
-                lc.startsWith("buswifi") ||         // Some transit buses in LA Calif metro area
-                lc.startsWith("coachamerica") ||    // Charter bus service with on board WiFi
-                lc.startsWith("disneylandresortexpress") ||  // Bus with on board WiFi
-                lc.startsWith("taxilinq") ||        // Taxi cab wifi system.
-                lc.startsWith("transitwirelesswifi") ||  // New York City public transport wifi
-
-                // Dash cams
-                lc.startsWith("yicarcam") ||        // Dashcam WiFi.
-
-                // Other
-                lcSplit.contains("mobile") ||  // What I'd put into a mobile hotspot name
-                lc.contains("nsb_interakti") ||     // ???
-                lc.contains("nvram warning"))       // NVRAM WARNING Error pseudo-network
-
-                // lc.endsWith("_nomap")                    // Google unsubscribe option
-        if (DEBUG) Log.d(TAG, "blacklistWifi('$logString'): blacklisted = $blacklisted")
+        if (DEBUG && blacklisted) Log.d(TAG, "blacklistWifi('$logString'): blacklisted")
         return blacklisted
     }
 
@@ -533,13 +463,57 @@ class RfEmitter(val type: EmitterType, val id: String) {
         const val LOC_ASU = "asu"
         const val LOC_MIN_COUNT = "minCount"
 
-        private val splitRegex = "[^a-z]".toRegex()
+        private val splitRegex = "[^a-z]".toRegex() // for splitting SSID into "words"
+        private val blacklistWords = setOf(
+            "android", "ipad", "phone", "motorola", // mobile tethering
+            "mobile", // sounds like name for mobile hotspot
+            "deinbus", "ecolines", "eurolines", "fernbus", "flixbus", "muenchenlinie",
+            "postbus", "skanetrafiken", "oresundstag", "regiojet", // transport
 
+            // Per an instructional video on YouTube, recent (2014 and later) Chrysler-Fiat
+            // vehicles have a SSID of the form "Chrysler uconnect xxxxxx" where xxxxxx
+            // seems to be a hex digit string (suffix of BSSID?).
+            "uconnect", // Chrysler built vehicles
+            "chevy", // "Chevy Cruz 7774" and "Davids Chevy" seen.
+            "silverado", // GMC Silverado. "Bryces Silverado" seen, maybe move to startsWith?
+            "myvolvo", // Volvo in car WiFi, maybe move to startsWith?
+        )
+        private val blacklistStartsWith = setOf(
+            "moto ", "samsung galaxy", "lg aristo", // mobile tethering
+            "cellspot", // T-Mobile US portable cell based WiFi
+            "verizon", // Verizon mobile hotspot
+
+            // Per some instructional videos on YouTube, recent (2015 and later)
+            // General Motors built vehicles come with a default WiFi SSID of the
+            // form "WiFi Hotspot 1234" where the 1234 is different for each car.
+            "wifi hotspot ", // Default GM vehicle WiFi name
+
+            // Per instructional video on YouTube, Mercedes cars have and SSID of
+            // "MB WLAN nnnnn" where nnnnn is a 5 digit number.
+            "mb wlan ",
+            "westbahn ", "buswifi", "coachamerica", "disneylandresortexpress",
+            "taxilinq", "transitwirelesswifi", // transport, maybe move some to words?
+            "yicarcam", // Dashcam WiFi.
+        )
+        private val blacklistEndsWith = setOf(
+            "corvette", // Chevy Corvette. "TS Corvette" seen.
+
+            // General Motors built vehicles SSID can be changed but the recommended SSID to
+            // change to is of the form "first_name vehicle_model" (e.g. "Bryces Silverado").
+            "truck", // "Morgans Truck" and "Wally Truck" seen
+            "suburban", // Chevy/GMC Suburban. "Laura Suburban" seen
+            "terrain", // GMC Terrain. "Nelson Terrain" seen
+            "sierra", // GMC pickup. "dees sierra" seen
+            "gmc wifi", // General Motors
+        )
+        private val blacklistEquals = setOf(
+            "amtrak", "amtrakconnect", "cdwifi", "megabus", "westlan","wifi in de trein",
+            "svciob", "oebb", "oebb-postbus", "dpmbfree", "telekom_ice", "db ic bus", // transport
+        )
         /**
          * Given an emitter type, return the various characteristics we need to know
          * to model it.
          *
-         * @param t An emitter type (WLAN_24GHZ, MOBILE, etc.)
          * @return The characteristics needed to model the emitter
          */
         fun EmitterType.getRfCharacteristics(): RfCharacteristics =
