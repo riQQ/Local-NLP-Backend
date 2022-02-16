@@ -21,6 +21,7 @@ package org.fitchfamily.android.dejavu
 
 import android.Manifest.permission
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.content.*
 import android.content.pm.PackageManager
@@ -34,11 +35,14 @@ import android.provider.Settings
 import android.telephony.*
 import android.telephony.gsm.GsmCellLocation
 import android.util.Log
+import kotlinx.coroutines.*
 import org.fitchfamily.android.dejavu.RfEmitter.Companion.getRfCharacteristics
 import org.microg.nlp.api.LocationBackendService
 import org.microg.nlp.api.MPermissionHelperActivity
 import java.util.*
 import java.util.concurrent.ConcurrentLinkedQueue
+import kotlin.math.cos
+import kotlin.math.sqrt
 
 /**
  * Created by tfitch on 8/27/17.
@@ -48,20 +52,40 @@ class BackendService : LocationBackendService() {
     private var wifiBroadcastReceiverRegistered = false
     private var permissionsOkay = true
 
-    // We use a threads for potentially slow operations.
-    // TODO: coroutine?
-    private var mobileThread: Thread? = null
-    private var backgroundThread: Thread? = null
     private var wifiScanInProgress = false
     private var telephonyManager: TelephonyManager? = null
+    // TODO: later
+//    private val wifiManager: WifiManager by lazy { applicationContext.getSystemService(WIFI_SERVICE) as WifiManager }
     private var wifiManager: WifiManager? = null
     private val wifiBroadcastReceiver: BroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            onWiFisChanged()
+            wifiScope.launch { onWiFisChanged() }
         }
     }
     private var gpsLocation: Kalman? = null // Filtered GPS (because GPS is so bad on Moto G4 Play)
     private var oldLocationUpdate = 0L // store last update of the previous period to allow checking whether gpsLocation has changed
+    // TODO: do i need 3 different scopes? information is not clear here...
+    private val mobileScanScope = CoroutineScope(Job() + Dispatchers.Default) // scope for scanning mobile towers, to be cancelled at end of period
+    private val backgroundScope = CoroutineScope(Job() + Dispatchers.Default) // scope for background processing
+    private val wifiScope = CoroutineScope(Job() + Dispatchers.Default) // processing wifi results and doing
+    private var backgroundJob: Job = backgroundScope.launch { }
+
+    private val is5GhzSupported: Boolean by lazy {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
+            wifiManager!!.is5GHzBandSupported
+        else
+            true // assume supported
+    }
+    // TODO: enable after API change
+/*    private val is6GhzSupported = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+            wifiManager!!.is6GHzBandSupported
+        else
+            false // old devices most likely don't support it
+*/
+    private val supportedEmittersThatCanDecreaseTrust by lazy {
+        emittersThatCanDecreaseTrust
+            .filterNot { it == EmitterType.WLAN5 && !is5GhzSupported }
+    }
 
     //
     // Periodic process information.
@@ -263,26 +287,18 @@ class BackendService : LocationBackendService() {
     private fun startMobileScan() {
         // Throttle scanning for mobile towers. Generally each tower covers a significant amount
         // of terrain so even if we are moving fairly rapidly we should remain in a single tower's
-        // coverage area for several seconds. No need to sample more ofen than that and we save
+        // coverage area for several seconds. No need to sample more often than that and we save
         // resources on the phone.
         val currentProcessTime = SystemClock.elapsedRealtime()
-        if (currentProcessTime < nextMobileScanTime) {
+        if (currentProcessTime < nextMobileScanTime || mobileScanScope.isActive) {
             if (DEBUG) Log.d(TAG, "startMobileScan() - need to wait before starting next scan")
             return
         }
         nextMobileScanTime = currentProcessTime + MOBILE_SCAN_INTERVAL
 
-        // Scanning towers takes some time, so do it in a separate thread.
-        if (mobileThread != null) {
-            if (DEBUG) Log.d(TAG, "startMobileScan() - Thread exists.")
-            return
-        }
-        if (DEBUG) Log.d(TAG,"startMobileScan() - Starting mobile signal scan thread.")
-        mobileThread = Thread { // TODO: coroutine?
-            scanMobile()
-            mobileThread = null
-        }
-        mobileThread!!.start()
+        // Scanning towers takes some time, so do it in a coroutine
+        if (DEBUG) Log.d(TAG,"startMobileScan() - Starting mobile signal scan.")
+        mobileScanScope.launch { scanMobile() }
     }
 
     /**
@@ -322,7 +338,6 @@ class BackendService : LocationBackendService() {
         }
         if (allCells.isEmpty()) return deprecatedGetMobileTowers()
 
-        // TODO: mnc can be null... damn
         val intMax = Int.MAX_VALUE
         val alternativeMnc by lazy { // determine mnc the other way not more than once per call of getMobileTowers
             telephonyManager!!.networkOperator?.let { if (it.length > 5) it.substring(3) else null }
@@ -569,18 +584,16 @@ class BackendService : LocationBackendService() {
                 null
         val work = WorkItem(observations, loc /*, timeMs*/)
         workQueue.offer(work)
-        if (backgroundThread != null)
+        if (backgroundJob.isActive)
             return
-        if (DEBUG) Log.d(TAG,"queueForProcessing() - Creating new background thread");
-        backgroundThread = Thread { // TODO: coroutine?
+        if (DEBUG) Log.d(TAG,"queueForProcessing() - Starting new background job")
+        backgroundJob = backgroundScope.launch {
             var myWork = workQueue.poll()
             while (myWork != null) {
                 backgroundProcessing(myWork)
                 myWork = workQueue.poll()
             }
-            backgroundThread = null
         }
-        backgroundThread!!.start()
     }
 
     //
@@ -612,10 +625,8 @@ class BackendService : LocationBackendService() {
         for (observation in myWork.observations) {
             seenSet.add(observation.identification)
             val emitter = emitterCache!![observation.identification]
-            if (emitter != null) {
-                emitter.lastObservation = observation
-                emitters.add(emitter)
-            }
+            emitter.lastObservation = observation
+            emitters.add(emitter)
         }
 
         // Update emitter coverage based on GPS as needed and get the set of locations
@@ -637,6 +648,7 @@ class BackendService : LocationBackendService() {
 
         if (currentProcessTime >= delayUntil) {
             nextReportTime = currentProcessTime + REPORTING_INTERVAL
+            mobileScanScope.cancel() // stop the mobile scan if it's still happening
             endOfPeriodProcessing()
         } else if (DEBUG && currentProcessTime > nextReportTime)
             Log.d(TAG, "backgroundProcessing() - Delaying endOfPeriodProcessing because WiFi scan in progress")
@@ -652,9 +664,10 @@ class BackendService : LocationBackendService() {
     @Synchronized
     private fun updateEmitters(emitters: Collection<RfEmitter>, gps: Location? /*, curTime: Long*/) {
         if (emitterCache == null) {
-            Log.d(TAG, "updateEmitters() - emitterCache is null?!?")
+            Log.d(TAG, "updateEmitters() - emitterCache is null: creating")
             emitterCache = Cache(this)
         }
+        if (gpsLocation == null) return // no need to go through loop and check whether it's null several times
         for (emitter in emitters) {
             emitter.updateLocation(gps)
         }
@@ -668,17 +681,9 @@ class BackendService : LocationBackendService() {
      * @return A list of the coverage areas for the emitters
      */
     private fun getRfLocations(rfIds: Collection<RfIdentification>): List<Location> {
-        val locations = LinkedList<Location>()
         emitterCache!!.loadIds(rfIds)
-        for (id in rfIds) {
-            val emitter = emitterCache!![id]
-            if (emitter != null) {
-                val location = emitter.location
-                if (location != null) {
-                    locations.add(location)
-                }
-            }
-        }
+        val locations = rfIds.mapNotNull { emitterCache!![it].location }
+        if (DEBUG) Log.d(TAG, "getRfLocations() - returning ${locations.size} locations")
         return locations
     }
 
@@ -736,7 +741,7 @@ class BackendService : LocationBackendService() {
             for (l in result) {
                 requiredCount = l.extras.getInt(RfEmitter.LOC_MIN_COUNT, 9999).coerceAtMost(requiredCount)
             }
-            //Log.d(TAG,"culledEmitters() reqdCount="+reqdCount+", size="+rslt.size());
+            if (DEBUG) Log.d(TAG, "culledEmitters() - got ${result.size}, $requiredCount are required")
             if (result.size >= requiredCount) return result
         }
         return null
@@ -783,9 +788,9 @@ class BackendService : LocationBackendService() {
         // If the location is within range of all current members of the
         // group, then we are compatible.
         for (other in locGroup) {
-            val testDistance = (location.distanceTo(other) -
+            val testDistance = (distance(location, other) -
                     location.accuracy -
-                    other.accuracy).toDouble()
+                    other.accuracy)
             if (testDistance > 0.0) {
                 //Log.d(TAG,"locationCompatibleWithGroup(): "+testDistance);
                 return false
@@ -802,6 +807,15 @@ class BackendService : LocationBackendService() {
      */
     private fun endOfPeriodProcessing() {
         if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - Starting new process period.")
+        // TODO: delay if work queue is not empty?
+        // the whole thing may be organized differently, like...
+        //  start it immediately when starting scans (if not running)
+        //  put a delay here (suspend fun)
+        //  and then, if wifi scan running or queue not empty, wait a bit longer
+
+        // load all emitters into the cache to avoid several single database transactions
+        // not necessary, actually this is done be getRfLocations, which loads the seenSet
+        //emitterCache!!.loadIds(seenSet)
 
         // Estimate location using weighted average of the most recent
         // observations from the set of RF emitters we have seen. We cull
@@ -810,16 +824,14 @@ class BackendService : LocationBackendService() {
         val locations: Collection<Location>? = culledEmitters(getRfLocations(seenSet))
         val weightedAverageLocation = computePosition(locations)
         if (weightedAverageLocation != null && notNullIsland(weightedAverageLocation)) {
-            //Log.d(TAG, "endOfPeriodProcessing(): " + weightedAverageLocation.toString());
+            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing(): reporting location")
             report(weightedAverageLocation)
-        }
-
-        // load all emitters into the cache to avoid several single database transactions
-        emitterCache!!.loadIds(seenSet)
+        } else
+            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing(): no location to report")
 
         // Increment the trust of the emitters we've seen and decrement the trust
         // of the emitters we expected to see but didn't.
-        seenSet.forEach { emitterCache!![it]?.incrementTrust() }
+        seenSet.forEach { emitterCache!![it].incrementTrust() }
 
         // If we are dealing with very movable emitters, then try to detect ones that
         // have moved out of the area. We do that by collecting the set of emitters
@@ -830,31 +842,66 @@ class BackendService : LocationBackendService() {
         // decrease trust for them anyway and. So syncing emitter cache before creating
         // the expectedSet is not necessary.
         val expectedSet: MutableSet<RfIdentification> = HashSet()
-        if (weightedAverageLocation != null // getExpected is slow when the database is large, so don't check every time
+//        val expectedSet2: MutableSet<RfEmitter> = HashSet()
+        if (weightedAverageLocation != null // getExpected is slow when the database is large, so don't check every time //TODO: solve this via minimum time between checks
             && (getRfLocations(seenSet).size - locations!!.size > 2 || SystemClock.elapsedRealtime() % 8 == 1L)
         ) {
             if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - getting expected emitters")
             // we create expectedSet exclusively to decrease trust of emitters that are not found,
-            // so there is no need to add emitters that cannot decrease trust
-            // TODO: limit to types the device is (currently) capable of
-            //  e.g. don't look for LTE if the device is not LTE capable, or it is switched to 2g only
-            //  also don't look for wifis if wifi is off!
-            //   this is important
-            //   how to detect difference between wifi off and wifi really off (no background scanning)?
-            //   plus, wifis should be skipped if last scan was found to have returned an old list
-            //     and... check wifiManager.is5GHzBandSupported (and maybe 6 ghz)
-            // TODO: this is neither completed nor tested!
-            // wifi scan is possible if wifi is enabled or background scan is enabled AND airplane mode disabled
-            val canScanWifi = wifiManager?.let { it.isWifiEnabled || (it.isScanAlwaysAvailable && !airplaneMode) } ?: true
+            //  so there is no need to add emitters that cannot decrease trust
+            // further, we don't want to decrease trust of emitters we cannot see because the
+            //  related functionality is switched off (e.g. wifi and background scanning off)
+            // then we want to avoid querying the database multiple times, which is much slower
+            //  than a single query, even if too much is returned
+            // so we get all interesting emitters in the largest typicalRange and remove
+            //  those that are too far away
 
-            for (emitterType in emittersThatCanDecreaseTrust) {
-                expectedSet.addAll(getExpected(weightedAverageLocation, emitterType))
+            // TODO: multiple queries are slow!
+            //  better do a single query with the largest radius and filter results afterwards
+            //  filtering should be done by distance from location and the individual range of the emitter
+            //   use radius or do proper bbox check with ns and ew?
+            /* plan:
+             *  get emitter types that can decrease trust and that we can currently see
+             *    means: no bluetooth if bluetooth is off, no wlan6 if device doesn't support,...
+             *  get the largest radius of those
+             *  get ids at this location within radius
+             *  remove ids that are too far away (means: a 1. i need location, b. load all into cache)
+             *    i.e. either further than their typical range, or better: where our position is outside their bbox
+             */
+            // get emitter types that can decrease trust and the device can see
+            // filter by emitter types which we can currently see
+
+            // wifi scan is possible if wifi is enabled or background scan is enabled AND airplane mode disabled
+            val canScanWifi = wifiManager!!.let { it.isWifiEnabled || (it.isScanAlwaysAvailable && !airplaneMode) }
+            // bluetooth currently not supported
+            //val canScamBluetooth = BluetoothAdapter.getDefaultAdapter().let { it.isEnabled && it.state == BluetoothAdapter.STATE_ON }
+            val emitterTypesToCheck = supportedEmittersThatCanDecreaseTrust.filter {
+                when (it) {
+                    EmitterType.WLAN5, EmitterType.WLAN2, EmitterType.WLAN6 -> canScanWifi
+                    EmitterType.BT -> false // TODO: currently not implemented
+                    else -> true
+                }
+            }
+            // (currently) no need to check airplane and mobile mode (2g/3g/...) since towers can't decrease trust
+
+            // get largest radius of those emitters, to avoid having to do multiple database queries (which is slow)
+/*            val radius = emitterTypesToCheck.map { it.getRfCharacteristics().typicalRange }.maxOf { it }
+
+            // TODO: why is the original bounding box not nearly square?
+            // and get the emitters
+            val em = getExpectedEmitters(weightedAverageLocation, emitterTypesToCheck, radius)
+            // but filter those out that are further away than their radius (or minimumRange)
+            expectedSet2.addAll(getExpectedEmitters(weightedAverageLocation, emitterTypesToCheck, radius))
+*/
+            for (emitterType in emitterTypesToCheck) {
+                expectedSet.addAll(getExpectedIds(weightedAverageLocation, emitterType))
             }
             // only do if gps location has updated since the last period
             if (gpsLocation?.timeOfUpdate ?: 0 > oldLocationUpdate) {
+//                expectedSet2.addAll(getExpectedEmitters(gpsLocation?.location, emitterTypesToCheck, radius))
                 val location = gpsLocation!!.location
-                for (emitterType in emittersThatCanDecreaseTrust) {
-                    expectedSet.addAll(getExpected(location, emitterType))
+                for (emitterType in emitterTypesToCheck) {
+                    expectedSet.addAll(getExpectedIds(location, emitterType))
                 }
             }
             emitterCache!!.loadIds(expectedSet)
@@ -862,11 +909,6 @@ class BackendService : LocationBackendService() {
         // decrease trust of emitters expected, but not found
         expectedSet.forEach {
             if (!seenSet.contains(it)) {
-                // TODO: only decrease trust if we should be in range?
-                //  because we fetch by typical range, but emitter maybe has smaller radius?
-                //  like: if radius < typical range, don't decrease
-                //  or: if distance between our location and emitter > emitter.radius, don't decrease
-                //   maybe better with a bbox check (but this may be computationally expensive)
                 emitterCache!![it].decrementTrust()
             }
         }
@@ -888,13 +930,31 @@ class BackendService : LocationBackendService() {
      * box.
      * @return A set of IDs for the RF emitters we should expect in this location.
      */
-    private fun getExpected(loc: Location?, rfType: EmitterType): Set<RfIdentification> {
+    private fun getExpectedIds(loc: Location?, rfType: EmitterType): Set<RfIdentification> {
         val rfChar = rfType.getRfCharacteristics()
         if (loc == null || loc.accuracy > rfChar.typicalRange) return HashSet()
         val bb = BoundingBox(loc.latitude, loc.longitude, rfChar.typicalRange)
-        return emitterCache!!.getEmitters(rfType, bb)
+        return emitterCache!!.getIds(rfType, bb)
     }
 
+    // TODO: later. Plan: get emitters from DB, and filter out emitters that are not actually expected
+    //  because according to their range they are too far away
+    //  would be a lot simpler if db would store bboxes instead of center + width/height
+/*    private fun getExpectedEmitters(loc: Location?, rfTypes: Collection<EmitterType>, radius: Float): Set<RfEmitter> {
+        if (loc == null || loc.accuracy > radius) return emptySet()
+        val bb = BoundingBox(loc.latitude, loc.longitude, radius)
+        val emitters = emitterCache!!.getEmitters(rfTypes, bb)
+        // filter those out that are further away than their radius (or minimumRange)
+        emitters.filter {
+            // coverage is not null when loading from DB
+            if (it.coverage!!.radius < it.type.getRfCharacteristics().typicalRange)
+                distance(loc, it.coverage!!.center_lat, it.coverage!!.center_lon) < it.type.getRfCharacteristics().minimumRange
+            else
+                it.coverage?.containsLocation(loc)
+        }
+        return emitters
+    }
+*/
     companion object {
         private val DEBUG = BuildConfig.DEBUG
 
@@ -967,8 +1027,8 @@ class BackendService : LocationBackendService() {
          * @param loc The location to be checked
          * @return boolean True if away from lat,lon of 0,0
          */
-        fun notNullIsland(loc: Location?): Boolean {
-            return nullIsland.distanceTo(loc) > NULL_ISLAND_DISTANCE
+        fun notNullIsland(loc: Location): Boolean {
+            return distance(nullIsland, loc) > NULL_ISLAND_DISTANCE
         }
 
         /**
@@ -998,5 +1058,19 @@ class BackendService : LocationBackendService() {
         private val emittersThatCanDecreaseTrust = EmitterType.values().filter {
             it.getRfCharacteristics().decreaseTrust != 0
         }
+
+        // simple approximate distance calculation, accurate enough if latitude difference is small
+        //  like few 100 m, or maybe several km
+        private fun distance(loc1: Location, lat2: Double, lon2: Double): Double {
+            val distLat = (loc1.latitude - lat2) * DEG_TO_METER
+            val distLon = (loc1.longitude - lon2) * DEG_TO_METER * cos(Math.toRadians(loc1.latitude))
+            return sqrt(distLat * distLat + distLon * distLon)
+        }
+
+        private fun distance(loc1: Location, loc2: Location): Double {
+            return distance(loc1, loc2.latitude, loc2.longitude)
+        }
+
+
     }
 }
