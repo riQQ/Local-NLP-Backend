@@ -21,8 +21,6 @@ package org.fitchfamily.android.dejavu
 
 import android.Manifest.permission
 import android.annotation.SuppressLint
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothDevice
 import android.content.*
 import android.content.pm.PackageManager
 import android.location.Location
@@ -54,9 +52,7 @@ class BackendService : LocationBackendService() {
 
     private var wifiScanInProgress = false
     private var telephonyManager: TelephonyManager? = null
-    // TODO: later
-//    private val wifiManager: WifiManager by lazy { applicationContext.getSystemService(WIFI_SERVICE) as WifiManager }
-    private var wifiManager: WifiManager? = null
+    private val wifiManager: WifiManager by lazy { applicationContext.getSystemService(WIFI_SERVICE) as WifiManager }
     private val wifiBroadcastReceiver: BroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             wifiScope.launch { onWiFisChanged() }
@@ -72,13 +68,13 @@ class BackendService : LocationBackendService() {
 
     private val is5GhzSupported: Boolean by lazy {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
-            wifiManager!!.is5GHzBandSupported
+            wifiManager.is5GHzBandSupported
         else
             true // assume supported
     }
     // TODO: enable after API change
 /*    private val is6GhzSupported = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
-            wifiManager!!.is6GHzBandSupported
+            wifiManager.is6GHzBandSupported
         else
             false // old devices most likely don't support it
 */
@@ -267,14 +263,11 @@ class BackendService : LocationBackendService() {
             return
         }
         nextWlanScanTime = currentProcessTime + WLAN_SCAN_INTERVAL
-        if (wifiManager == null) {
-            wifiManager = this.applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
-        }
-        if (wifiManager != null && !wifiScanInProgress) {
-            if (wifiManager!!.isWifiEnabled || wifiManager!!.isScanAlwaysAvailable) {
+        if (!wifiScanInProgress) {
+            if (wifiManager.isWifiEnabled || wifiManager.isScanAlwaysAvailable) {
                 if (DEBUG) Log.d(TAG, "startWiFiScan() - Starting WiFi collection.")
                 wifiScanInProgress = true
-                wifiManager!!.startScan()
+                wifiManager.startScan()
             }
         } else if (DEBUG) Log.d(TAG, "startWiFiScan() - WiFi scan in progress, not starting.")
     }
@@ -523,8 +516,8 @@ class BackendService : LocationBackendService() {
      */
     @Synchronized
     private fun onWiFisChanged() {
-        if (wifiManager != null && emitterCache != null) {
-            val scanResults = wifiManager!!.scanResults
+        if (emitterCache != null) {
+            val scanResults = wifiManager.scanResults
             if (scanResults.sameAs(oldScanResults)) {
                 if (DEBUG) Log.d(TAG, "onWiFisChanged(): scan results are the same as old results")
                 //return // TODO: only log for now, maybe do something later
@@ -872,7 +865,7 @@ class BackendService : LocationBackendService() {
             // filter by emitter types which we can currently see
 
             // wifi scan is possible if wifi is enabled or background scan is enabled AND airplane mode disabled
-            val canScanWifi = wifiManager!!.let { it.isWifiEnabled || (it.isScanAlwaysAvailable && !airplaneMode) }
+            val canScanWifi = wifiManager.let { it.isWifiEnabled || (it.isScanAlwaysAvailable && !airplaneMode) }
             // bluetooth currently not supported
             //val canScamBluetooth = BluetoothAdapter.getDefaultAdapter().let { it.isEnabled && it.state == BluetoothAdapter.STATE_ON }
             val emitterTypesToCheck = supportedEmittersThatCanDecreaseTrust.filter {
