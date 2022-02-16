@@ -39,6 +39,7 @@ import org.microg.nlp.api.LocationBackendService
 import org.microg.nlp.api.MPermissionHelperActivity
 import java.util.*
 import java.util.concurrent.ConcurrentLinkedQueue
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sqrt
 
@@ -876,9 +877,7 @@ class BackendService : LocationBackendService() {
                 }
             }
             // (currently) no need to check airplane and mobile mode (2g/3g/...) since towers can't decrease trust
-
-            // get largest radius of those emitters, to avoid having to do multiple database queries (which is slow)
-/*            val radius = emitterTypesToCheck.map { it.getRfCharacteristics().typicalRange }.maxOf { it }
+/*
 
             // TODO: why is the original bounding box not nearly square?
             // and get the emitters
@@ -930,24 +929,26 @@ class BackendService : LocationBackendService() {
         return emitterCache!!.getIds(rfType, bb)
     }
 
-    // TODO: later. Plan: get emitters from DB, and filter out emitters that are not actually expected
+    // get emitters from DB, and filter out emitters that are not actually expected
     //  because according to their range they are too far away
-    //  would be a lot simpler if db would store bboxes instead of center + width/height
-/*    private fun getExpectedEmitters(loc: Location?, rfTypes: Collection<EmitterType>, radius: Float): Set<RfEmitter> {
+    private fun getExpectedEmitters(loc: Location?, rfTypes: Collection<EmitterType>): Set<RfEmitter> {
+        // get largest radius of those emitters, to avoid having to do multiple database queries (which is slow)
+        val radius = rfTypes.map { it.getRfCharacteristics().typicalRange }.maxOf { it }
         if (loc == null || loc.accuracy > radius) return emptySet()
         val bb = BoundingBox(loc.latitude, loc.longitude, radius)
         val emitters = emitterCache!!.getEmitters(rfTypes, bb)
+
         // filter those out that are further away than their radius (or minimumRange)
         emitters.filter {
             // coverage is not null when loading from DB
-            if (it.coverage!!.radius < it.type.getRfCharacteristics().typicalRange)
+            if (it.coverage!!.contains(loc))
+                true // if we are inside coverage, we expect to see this emitter
+            else // if we are outside, the emitter might have point-sized coverage -> check minimum radius
                 distance(loc, it.coverage!!.center_lat, it.coverage!!.center_lon) < it.type.getRfCharacteristics().minimumRange
-            else
-                it.coverage?.containsLocation(loc)
         }
         return emitters
     }
-*/
+
     companion object {
         private val DEBUG = BuildConfig.DEBUG
 
@@ -1060,9 +1061,11 @@ class BackendService : LocationBackendService() {
             return sqrt(distLat * distLat + distLon * distLon)
         }
 
-        private fun distance(loc1: Location, loc2: Location): Double {
-            return distance(loc1, loc2.latitude, loc2.longitude)
-        }
+        private fun distance(loc1: Location, loc2: Location): Double =
+            if (abs(loc1.latitude) > 80.0)
+                 loc1.distanceTo(loc2).toDouble()
+            else
+                distance(loc1, loc2.latitude, loc2.longitude)
 
 
     }

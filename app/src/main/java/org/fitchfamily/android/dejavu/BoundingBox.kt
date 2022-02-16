@@ -147,4 +147,8 @@ data class BoundingBox(
         return "($north,$west,$south,$east,$center_lat,$center_lon,$radius_ns,$radius_ew,$radius)"
     }
 
+    fun contains(location: Location): Boolean =
+        north > location.latitude && south < location.latitude
+                && east > location.longitude && west < location.longitude
+
 }
