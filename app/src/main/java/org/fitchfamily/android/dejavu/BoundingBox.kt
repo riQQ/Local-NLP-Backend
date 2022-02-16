@@ -88,8 +88,8 @@ data class BoundingBox(
         val locNorth = lat + r_ns * BackendService.METER_TO_DEG
         val locSouth = lat - r_ns * BackendService.METER_TO_DEG
         var cosLat = cos(Math.toRadians(lat))
-        val locEast = lon + r_ew * BackendService.METER_TO_DEG * cosLat
-        val locWest = lon - r_ew * BackendService.METER_TO_DEG * cosLat
+        val locEast = lon + r_ew * BackendService.METER_TO_DEG / cosLat
+        val locWest = lon - r_ew * BackendService.METER_TO_DEG / cosLat
 
         // return false if emitter bounding box already included in this bounding box
         if (!(locNorth > north || locSouth < south || locEast > east || locWest < west))
@@ -105,7 +105,7 @@ data class BoundingBox(
         center_lon = (east + west) / 2.0
         radius_ns = ((north - center_lat) * BackendService.DEG_TO_METER)
         cosLat = cos(Math.toRadians(center_lat)).coerceAtLeast(BackendService.MIN_COS)
-        radius_ew = (east - center_lon) * BackendService.DEG_TO_METER / cosLat
+        radius_ew = (east - center_lon) * BackendService.DEG_TO_METER * cosLat
         return true
     }
 
