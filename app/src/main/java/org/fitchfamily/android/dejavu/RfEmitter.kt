@@ -22,6 +22,7 @@ package org.fitchfamily.android.dejavu
 import android.location.Location
 import android.os.Bundle
 import android.util.Log
+import org.fitchfamily.android.dejavu.EmitterType.*
 
 /**
  * Created by tfitch on 8/27/17.
@@ -57,13 +58,14 @@ class RfEmitter(val type: EmitterType, val id: String) {
         coverage = BoundingBox(emitterInfo)
         trust = emitterInfo.trust
         status = EmitterStatus.STATUS_CACHED
+        note = emitterInfo.note
     }
 
-    private val ourCharacteristics = getRfCharacteristics(type)
+    private val ourCharacteristics = type.getRfCharacteristics()
     var trust: Int = ourCharacteristics.discoveryTrust
         private set
     private var coverage: BoundingBox? = null
-    var note: String = ""
+    var note: String? = "" // TODO: setting note currently triggers blacklist check, but this is not necessary when loading emitter from db!
         set(value) {
             if (field == value)
                 return
@@ -76,7 +78,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
             field = value
             note = value?.note ?: ""
         }
-    private var status: EmitterStatus = EmitterStatus.STATUS_UNKNOWN
+    var status: EmitterStatus = EmitterStatus.STATUS_UNKNOWN
+        private set
 
     val uniqueId: String get() = rfIdentification.uniqueId
     val typeString: String get() = type.toString()
@@ -343,12 +346,13 @@ class RfEmitter(val type: EmitterType, val id: String) {
      * @return True if the emitter is blacklisted (should not be used in position computations).
      */
     private fun blacklistEmitter(): Boolean =
-        if (note.isEmpty())
+        if (note.isNullOrEmpty())
             false
         else
              when (type) {
-                EmitterType.WLAN_24GHZ, EmitterType.WLAN_5GHZ -> blacklistWifi()
-                else -> false // Not expecting mobile towers to move around.
+                 WLAN2, WLAN5, WLAN6 -> blacklistWifi()
+                 BT -> false // if ever added, there should be a BT blacklist too
+                 else -> false // Not expecting mobile towers to move around.
             }
 
     /**
@@ -360,7 +364,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
      * @return True if emitter should be blacklisted.
      */
     private fun blacklistWifi(): Boolean {
-        val lc = note.lowercase()
+        val lc = note?.lowercase() ?: return false
 
         // split lc into continuous occurrences of a-z
         // most 'contains' checks below only make sense if the string is a separate word
@@ -374,6 +378,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
         val macSuffix =
             id.substring(id.length - 8).lowercase().replace(":", "")
 
+        // TODO: re-work blacklist, divide into sub-lists like startsWith, contains, endsWith, containsWord
         val blacklisted = (
                 // Mobile phone brands
                 lcSplit.contains("android") ||          // mobile tethering
@@ -381,7 +386,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 lcSplit.contains("phone") ||            // mobile tethering
                 lcSplit.contains("motorola") ||         // mobile tethering
                 lc.startsWith("moto ") ||        // "Moto E (4) 9509" seen
-                note.startsWith("MOTO") ||       // "MOTO9564" and "MOTO9916" seen
+                note?.startsWith("MOTO") == true ||       // "MOTO9564" and "MOTO9916" seen
                 lc.startsWith("samsung galaxy") ||  // mobile tethering
                 lc.startsWith("lg aristo") ||    // "LG Aristo 7124" seen
 
@@ -409,9 +414,10 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 lcSplit.contains("uconnect") ||           // Chrysler built vehicles
 
                 // Per instructional video on YouTube, Mercedes cars have and SSID of
-                // "MB WLAN nnnnn" where nnnnn is a 5 digit number.
-                lc.startsWith("mb wlan ") || (lc == macSuffix) ||  // Apparent default SSID name for many cars
-                note.startsWith("Audi") ||          // some cars seem to have this AP on-board
+
+                lc.startsWith("mb wlan ") ||         // "MB WLAN nnnnn" where nnnnn is a 5 digit number.
+                (lc == macSuffix) ||                       // Apparent default SSID name for many cars
+                note?.startsWith("Audi") == true || // some cars seem to have this AP on-board
                 lc.startsWith("chevy ") ||          // "Chevy Cruz 7774" seen.
                 lc.startsWith("gmc wifi") ||        // General Motors
                 lc.startsWith("myvolvo") ||         // Volvo in car WiFi
@@ -536,12 +542,12 @@ class RfEmitter(val type: EmitterType, val id: String) {
          * @param t An emitter type (WLAN_24GHZ, MOBILE, etc.)
          * @return The characteristics needed to model the emitter
          */
-        fun getRfCharacteristics(t: EmitterType?): RfCharacteristics =
-             when (t) {
-                EmitterType.WLAN_24GHZ -> characteristicsWlan24
-                EmitterType.WLAN_5GHZ -> characteristicsWlan5
-                EmitterType.MOBILE -> characteristicsMobile
-                else -> characteristicsUnknown
+        fun EmitterType.getRfCharacteristics(): RfCharacteristics =
+             when (this) {
+                WLAN2 -> characteristicsWlan24
+                WLAN5, WLAN6 -> characteristicsWlan5
+                GSM, CDMA, WCDMA, TDSCDMA, LTE, NR -> characteristicsMobile
+                BT, INVALID -> characteristicsUnknown
             }
 
         private val characteristicsWlan24 =
@@ -599,8 +605,21 @@ class RfEmitter(val type: EmitterType, val id: String) {
     }
 }
 
+// emitter type is stored as ordinal in database
+// so NEVER change the order!
+// when adding new types,do it below the last one
 enum class EmitterType {
-    WLAN_24GHZ, WLAN_5GHZ, MOBILE, INVALID
+    INVALID,
+    WLAN2,
+    WLAN5,
+    WLAN6,
+    BT,
+    GSM,
+    CDMA,
+    WCDMA,
+    TDSCDMA,
+    LTE,
+    NR,
 }
 
 enum class EmitterStatus {
@@ -614,16 +633,10 @@ enum class EmitterStatus {
 class RfCharacteristics (
     val requiredGpsAccuracy: Float,
     val minimumRange: Float,
-    val typicalRange: Float,
+    val typicalRange: Float,        // used in getExpected: if we are at a location, emitters in typicalRange around our location are fetched from db, and trust is decreased if they are not found
     val moveDetectDistance: Float,  // Maximum believable coverage radius in meters
-    val discoveryTrust: Int,       // Assumed trustiness of a rust an emitter seen for the first time.
+    val discoveryTrust: Int,        // Assumed trustiness of a rust an emitter seen for the first time.
     val increaseTrust: Int,
     val decreaseTrust: Int,
-    val minCount: Int              // Minimum number of emitters before we can estimate location
+    val minCount: Int               // Minimum number of emitters before we can estimate location
 )
-
-fun typeOf(typeStr: String): EmitterType {
-    if ((typeStr == EmitterType.MOBILE.toString())) return EmitterType.MOBILE
-    if ((typeStr == EmitterType.WLAN_24GHZ.toString())) return EmitterType.WLAN_24GHZ
-    return if ((typeStr == EmitterType.WLAN_5GHZ.toString())) EmitterType.WLAN_5GHZ else EmitterType.INVALID
-}

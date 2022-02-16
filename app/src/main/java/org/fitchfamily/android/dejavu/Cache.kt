@@ -84,33 +84,21 @@ internal class Cache(context: Context?) {
      * @param id
      * @return the emitter
      */
-    operator fun get(id: RfIdentification): RfEmitter? {
-        synchronized(this) {
-            if (db == null)
-                return null
-            val key = id.uniqueId
-            return workingSet[key]?.apply { resetAge() } ?: run {
-                val result = RfEmitter(id)
-                workingSet[key] = result
-                result
-            }
-/*            var result = workingSet[key]
-            if (result == null) {
-                    result = RfEmitter(id)
-                workingSet[key] = result
-                if (DEBUG) Log.d(TAG, "get('$key') - Added new emitter to cache.")
-            }
-            result.resetAge()
-            return result
-*/        }
+    operator fun get(id: RfIdentification): RfEmitter {
+        val key = id.uniqueId
+        return workingSet[key]?.apply { resetAge() } ?: run {
+            val result = RfEmitter(id)
+            synchronized(this) { workingSet[key] = result }
+            result
+        }
     }
 
     fun loadIds(ids: Collection<RfIdentification>) {
         if (DEBUG) Log.d(TAG, "loadIds() - Fetching ids not in working set from db.")
-        synchronized(this) {
             if (db == null) return
             val idsToLoad = ids.filterNot { workingSet.containsKey(it.uniqueId) }
             if (idsToLoad.isEmpty()) return
+        synchronized(this) {
             val emitters = db!!.getEmitters(idsToLoad)
             workingSet.putAll(emitters.associateBy { it.uniqueId })
         }
@@ -133,21 +121,20 @@ internal class Cache(context: Context?) {
      * our cache.
      */
     fun sync() {
+        if (db == null)
+            return
+
+        // Scan all of our emitters to see
+        // 1. If any have dirty data to sync to the flash database
+        // 2. If any have been unused long enough to remove from cache
+        val agedSet = HashSet<RfIdentification>()
+        workingSet.values.forEach {
+            if (it.age >= MAX_AGE)
+                agedSet.add(it.rfIdentification)
+            it.incrementAge()
+        }
+
         synchronized(this) {
-            if (db == null)
-                return
-
-            // Scan all of our emitters to see
-            // 1. If any have dirty data to sync to the flash database
-            // 2. If any have been unused long enough to remove from cache
-            val agedSet = HashSet<RfIdentification>()
-            for ((_, emitter) in workingSet) {
-                //if (DEBUG) Log.d(TAG, "sync('${emitter.rfIdentification}') - Age: " + emitter.age)
-                if (emitter.age >= MAX_AGE)
-                    agedSet.add(emitter.rfIdentification)
-                emitter.incrementAge()
-            }
-
             val emittersInNeedOfSync = workingSet.values.filter { it.syncNeeded() }
             if (emittersInNeedOfSync.isNotEmpty()) {
                 if (DEBUG) Log.d(TAG, "sync() - syncing emitters with db")
@@ -159,10 +146,9 @@ internal class Cache(context: Context?) {
             }
 
             // Remove aged out items from cache
-            for (id in agedSet) {
-                val key = id.uniqueId
-                if (DEBUG) Log.d(TAG, "sync('$key') - Aged out, removed from cache.")
-                workingSet.remove(key)
+            agedSet.forEach {
+                workingSet.remove(it.uniqueId)
+                if (DEBUG) Log.d(TAG, "sync('${it.uniqueId}') - Aged out, removed from cache.")
             }
 
             if (workingSet.size > MAX_WORKING_SET_SIZE) {

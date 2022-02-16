@@ -42,7 +42,9 @@ data class RfIdentification(
     val uniqueId = toString()
 
     override fun toString(): String =
-        if (rfType == EmitterType.MOBILE) rfId
-        else rfType.name + '|' + rfId
+        when (rfType) {
+            EmitterType.WLAN2, EmitterType.WLAN5, EmitterType.WLAN6 -> rfType.name + '/' + rfId
+            else -> rfId
+        }
 
 }

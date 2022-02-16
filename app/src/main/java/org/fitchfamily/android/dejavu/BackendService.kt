@@ -21,6 +21,7 @@ package org.fitchfamily.android.dejavu
 
 import android.Manifest.permission
 import android.annotation.SuppressLint
+import android.bluetooth.BluetoothDevice
 import android.content.*
 import android.content.pm.PackageManager
 import android.location.Location
@@ -177,6 +178,7 @@ class BackendService : LocationBackendService() {
     override fun update(): Location? {
         //Log.d(TAG, "update() entry.");
         if (permissionsOkay) {
+            if (DEBUG) Log.d(TAG, "update() - NLP asking for location")
             scanAllSensors()
         } else {
             Log.d(TAG, "update() - Permissions not granted, soft fail.")
@@ -349,7 +351,7 @@ class BackendService : LocationBackendService() {
 
                 val idStr = "LTE/$mccString/$mncString/${id.ci}/${id.pci}/${id.tac}"
                 val asu = info.cellSignalStrength.asuLevel * MAXIMUM_ASU / 97
-                val o = Observation(idStr, EmitterType.MOBILE, asu)
+                val o = Observation(idStr, EmitterType.LTE, asu)
                 observations.add(o)
                 if (DEBUG) Log.d(TAG, "valid observation string: $idStr, asu $asu")
 
@@ -375,7 +377,7 @@ class BackendService : LocationBackendService() {
 
                 val idStr = "GSM/$mccString/$mncString/${id.lac}/${id.cid}"
                 val asu = info.cellSignalStrength.asuLevel
-                val o = Observation(idStr, EmitterType.MOBILE, asu)
+                val o = Observation(idStr, EmitterType.GSM, asu)
                 observations.add(o)
                 if (DEBUG) Log.d(TAG, "valid observation string: $idStr, asu $asu")
 
@@ -400,7 +402,7 @@ class BackendService : LocationBackendService() {
 
                 val idStr = "WCDMA/$mccString/$mncString/${id.lac}/${id.cid}"
                 val asu = info.cellSignalStrength.asuLevel
-                val o = Observation(idStr, EmitterType.MOBILE, asu)
+                val o = Observation(idStr, EmitterType.WCDMA, asu)
                 observations.add(o)
                 if (DEBUG) Log.d(TAG, "valid observation string: $idStr, asu $asu")
 
@@ -412,7 +414,7 @@ class BackendService : LocationBackendService() {
 
                 val idStr = "CDMA/${id.networkId}/${id.systemId}/${id.basestationId}"
                 val asu = info.cellSignalStrength.asuLevel
-                val o = Observation(idStr, EmitterType.MOBILE, asu)
+                val o = Observation(idStr, EmitterType.CDMA, asu)
                 observations.add(o)
                 if (DEBUG) Log.d(TAG, "valid observation string: $idStr, asu $asu")
 
@@ -444,7 +446,7 @@ class BackendService : LocationBackendService() {
         val info = telephonyManager!!.cellLocation
         if (info != null && info is GsmCellLocation) {
             val idStr = "GSM/$mcc/$mnc/${info.lac}/${info.cid}"
-            val o = Observation(idStr, EmitterType.MOBILE, MINIMUM_ASU)
+            val o = Observation(idStr, EmitterType.GSM, MINIMUM_ASU)
             observations.add(o)
         } else {
             if (DEBUG) Log.d(TAG, "deprecatedGetMobileTowers(): getCellLocation() returned null or not GsmCellLocation.")
@@ -457,7 +459,7 @@ class BackendService : LocationBackendService() {
                         val idStr = "GSM" + "/" + mcc + "/" +
                                 mnc + "/" + neighbor.lac + "/" +
                                 neighbor.cid
-                        val o = Observation(idStr, EmitterType.MOBILE, neighbor.rssi)
+                        val o = Observation(idStr, EmitterType.GSM, neighbor.rssi)
                         observations.add(o)
                     }
                 }
@@ -510,15 +512,16 @@ class BackendService : LocationBackendService() {
             val scanResults = wifiManager!!.scanResults
             if (scanResults.sameAs(oldScanResults)) {
                 if (DEBUG) Log.d(TAG, "onWiFisChanged(): scan results are the same as old results")
-                //return // TODO: only log for now
+                //return // TODO: only log for now, maybe do something later
             }
             val observations = hashSetOf<Observation>()
             if (DEBUG) Log.d(TAG, "onWiFisChanged(): " + scanResults.size + " scan results")
             for (scanResult in scanResults) {
                 val bssid = scanResult.BSSID.lowercase().replace(".", ":")
-                val rfType = if (is5GHz(scanResult)) EmitterType.WLAN_5GHZ
-                    else EmitterType.WLAN_24GHZ
-                if (DEBUG) Log.v(TAG, "rfType=$rfType, ScanResult=$scanResult")
+//                val rfType = if (is5GHz(scanResult)) EmitterType.WLAN5
+//                    else EmitterType.WLAN2
+                val rfType = scanResult.getWifiType()
+                if (DEBUG) Log.v(TAG, "rfType=$rfType, ScanResult: $scanResult")
                 val observation = Observation(bssid,
                     rfType,
                     WifiManager.calculateSignalLevel(scanResult.level, MAXIMUM_ASU),
@@ -816,10 +819,7 @@ class BackendService : LocationBackendService() {
 
         // Increment the trust of the emitters we've seen and decrement the trust
         // of the emitters we expected to see but didn't.
-        for (id in seenSet) {
-            val e = emitterCache!![id]
-            e?.incrementTrust()
-        }
+        seenSet.forEach { emitterCache!![it]?.incrementTrust() }
 
         // If we are dealing with very movable emitters, then try to detect ones that
         // have moved out of the area. We do that by collecting the set of emitters
@@ -833,6 +833,7 @@ class BackendService : LocationBackendService() {
         if (weightedAverageLocation != null // getExpected is slow when the database is large, so don't check every time
             && (getRfLocations(seenSet).size - locations!!.size > 2 || SystemClock.elapsedRealtime() % 8 == 1L)
         ) {
+            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - getting expected emitters")
             // we create expectedSet exclusively to decrease trust of emitters that are not found,
             // so there is no need to add emitters that cannot decrease trust
             // TODO: limit to types the device is (currently) capable of
@@ -841,6 +842,7 @@ class BackendService : LocationBackendService() {
             //   this is important
             //   how to detect difference between wifi off and wifi really off (no background scanning)?
             //   plus, wifis should be skipped if last scan was found to have returned an old list
+            //     and... check wifiManager.is5GHzBandSupported (and maybe 6 ghz)
             // TODO: this is neither completed nor tested!
             // wifi scan is possible if wifi is enabled or background scan is enabled AND airplane mode disabled
             val canScanWifi = wifiManager?.let { it.isWifiEnabled || (it.isScanAlwaysAvailable && !airplaneMode) } ?: true
@@ -857,10 +859,15 @@ class BackendService : LocationBackendService() {
             }
             emitterCache!!.loadIds(expectedSet)
         }
-        for (identification in expectedSet) {
-            if (!seenSet.contains(identification)) {
-                val emitter = emitterCache!![identification]
-                emitter?.decrementTrust()
+        // decrease trust of emitters expected, but not found
+        expectedSet.forEach {
+            if (!seenSet.contains(it)) {
+                // TODO: only decrease trust if we should be in range?
+                //  because we fetch by typical range, but emitter maybe has smaller radius?
+                //  like: if radius < typical range, don't decrease
+                //  or: if distance between our location and emitter > emitter.radius, don't decrease
+                //   maybe better with a bbox check (but this may be computationally expensive)
+                emitterCache!![it].decrementTrust()
             }
         }
 
@@ -882,7 +889,7 @@ class BackendService : LocationBackendService() {
      * @return A set of IDs for the RF emitters we should expect in this location.
      */
     private fun getExpected(loc: Location?, rfType: EmitterType): Set<RfIdentification> {
-        val rfChar = getRfCharacteristics(rfType)
+        val rfChar = rfType.getRfCharacteristics()
         if (loc == null || loc.accuracy > rfChar.typicalRange) return HashSet()
         val bb = BoundingBox(loc.latitude, loc.longitude, rfChar.typicalRange)
         return emitterCache!!.getEmitters(rfType, bb)
@@ -978,8 +985,18 @@ class BackendService : LocationBackendService() {
             return freq > 2500
         }
 
+        fun ScanResult.getWifiType(): EmitterType =
+            when {
+                frequency < 3000 -> EmitterType.WLAN2 // 2401 - 2495 MHz
+                frequency < 5945 -> EmitterType.WLAN5 // 5030 - 5990 MHz, but at 5945 WLAN6 starts
+                frequency > 6000 -> EmitterType.WLAN6 // 5945 - 7125
+                frequency % 10 == 5 -> EmitterType.WLAN6 // in the overlapping range, WLAN6 frequencies end with 5
+                    // except of 5945... which is on both regions -> how to tell apart?
+                else -> EmitterType.WLAN5
+            }
+
         private val emittersThatCanDecreaseTrust = EmitterType.values().filter {
-            getRfCharacteristics(it).decreaseTrust != 0
+            it.getRfCharacteristics().decreaseTrust != 0
         }
     }
 }

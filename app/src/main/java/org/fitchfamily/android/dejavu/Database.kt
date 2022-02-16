@@ -37,7 +37,7 @@ import java.util.HashSet
  */
 class Database(context: Context?) :
     SQLiteOpenHelper(context, NAME, null, VERSION) {
-    private var database: SQLiteDatabase? = null
+    private val database: SQLiteDatabase get() = writableDatabase
     private var withinTransaction = false
     private var updatesMade = false
     private var sqlSampleInsert: SQLiteStatement? = null
@@ -45,7 +45,6 @@ class Database(context: Context?) :
     private var sqlAPdrop: SQLiteStatement? = null
 
     override fun onCreate(db: SQLiteDatabase) {
-        database = db
         withinTransaction = false
         // Always create version 1 of database, then update the schema
         // in the same order it might occur "in the wild". Avoids having
@@ -158,9 +157,8 @@ class Database(context: Context?) :
                 do {
                     val rfId = cursor.getString(0)
                     var rftype = cursor.getString(1)
-                    if ((rftype == "WLAN")) rftype = EmitterType.WLAN_24GHZ.toString()
-                    val rfid = RfIdentification(rfId, typeOf(rftype))
-                    val hash = rfid.uniqueId
+                    if ((rftype == "WLAN")) rftype = "WLAN_24GHZ"
+                    val hash = rfId + rftype  // value doesn't matter, it's removed in next upgrade anyway
 
                     // Log.d(TAG,"upGradeToVersion2(): Updating '"+rfId.toString()+"'");
                     insert.bindString(1, hash)
@@ -185,11 +183,17 @@ class Database(context: Context?) :
     }
 
     private fun upGradeToVersion4(db: SQLiteDatabase) {
+        // another upgrade
+        // type column is now ordinal of EmitterType (idea: save space, allow for range queries)
+        // remove hash column
+        //  mobile emitter IDs are already unique
+        //  wifi emitters get wifi type prepended
+        // add index on latitude/longitude/type to accelerate the bounding box + type queries
         db.execSQL("BEGIN TRANSACTION;")
         db.execSQL("""
             CREATE TABLE IF NOT EXISTS ${TABLE_SAMPLES}_new (
             $COL_RFID TEXT PRIMARY KEY NOT NULL,
-            $COL_TYPE TEXT NOT NULL,
+            $COL_TYPE INTEGER NOT NULL,
             $COL_TRUST INTEGER NOT NULL,
             $COL_LAT REAL NOT NULL,
             $COL_LON REAL NOT NULL,
@@ -200,25 +204,35 @@ class Database(context: Context?) :
         """.trimIndent()
         )
         db.execSQL("DROP INDEX IF EXISTS $SPATIAL_INDEX_SAMPLES;")
-        // convert non-'mobile' emitters to the new unique string format
+        // add 2.4 GHz WiFis
         db.execSQL("""
             INSERT INTO ${TABLE_SAMPLES}_new($COL_RFID, $COL_TYPE, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE)
-            SELECT $COL_TYPE || '|' || $COL_RFID, $COL_TYPE, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
+            SELECT $COL_TYPE || '/' || $COL_RFID, ${EmitterType.WLAN2.ordinal}, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
             FROM $TABLE_SAMPLES
-            WHERE $COL_TYPE IN ('${EmitterType.WLAN_24GHZ}','${EmitterType.WLAN_5GHZ}','${EmitterType.INVALID}');
+            WHERE $COL_TYPE = 'WLAN_24GHZ';
         """.trimIndent()
         )
-        // cell towers are already unique
+        // add 5 GHz WiFis
         db.execSQL("""
             INSERT INTO ${TABLE_SAMPLES}_new($COL_RFID, $COL_TYPE, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE)
-            SELECT $COL_TYPE || '|' || $COL_RFID, $COL_TYPE, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
+            SELECT ${EmitterType.WLAN5} || '/' || $COL_RFID, ${EmitterType.WLAN5.ordinal}, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
             FROM $TABLE_SAMPLES
-            WHERE $COL_TYPE = '${EmitterType.MOBILE}';
+            WHERE $COL_TYPE = 'WLAN_5GHZ';
         """.trimIndent()
         )
+        // cell towers are already unique, but we need to split the types, as they may hav different characteristics
+        for (emitterType in arrayOf(EmitterType.GSM, EmitterType.WCDMA, EmitterType.CDMA, EmitterType.LTE)) {
+            db.execSQL("""
+            INSERT INTO ${TABLE_SAMPLES}_new($COL_RFID, $COL_TYPE, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE)
+            SELECT $COL_RFID, ${emitterType.ordinal}, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
+            FROM $TABLE_SAMPLES
+            WHERE $COL_TYPE = 'MOBILE' AND $COL_RFID LIKE '${emitterType}%';
+        """.trimIndent()
+            )
+        }
         db.execSQL("DROP TABLE $TABLE_SAMPLES;")
         db.execSQL("ALTER TABLE ${TABLE_SAMPLES}_new RENAME TO $TABLE_SAMPLES;")
-        db.execSQL("CREATE INDEX $SPATIAL_INDEX_SAMPLES ON $TABLE_SAMPLES ($COL_LAT,$COL_LON);")
+        db.execSQL("CREATE INDEX $SPATIAL_INDEX_SAMPLES ON $TABLE_SAMPLES ($COL_LAT,$COL_LON,$COL_TYPE);")
         db.execSQL("COMMIT;")
     }
 
@@ -241,8 +255,7 @@ class Database(context: Context?) :
         }
         withinTransaction = true
         updatesMade = false
-        database = writableDatabase
-        sqlSampleInsert = database!!.compileStatement(
+        sqlSampleInsert = database.compileStatement(
             ("INSERT INTO " +
                     TABLE_SAMPLES + "(" +
                     COL_RFID + ", " +
@@ -255,7 +268,7 @@ class Database(context: Context?) :
                     COL_NOTE + ") " +
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?);")
         )
-        sqlSampleUpdate = database!!.compileStatement(
+        sqlSampleUpdate = database.compileStatement(
             ("UPDATE " +
                     TABLE_SAMPLES + " SET " +
                     COL_TRUST + "=?, " +
@@ -266,12 +279,12 @@ class Database(context: Context?) :
                     COL_NOTE + "=? " +
                     "WHERE " + COL_RFID + "=?;")
         )
-        sqlAPdrop = database!!.compileStatement(
+        sqlAPdrop = database.compileStatement(
             ("DELETE FROM " +
                     TABLE_SAMPLES +
                     " WHERE " + COL_RFID + "=?;")
         )
-        database!!.beginTransaction()
+        database.beginTransaction()
     }
 
     /**
@@ -285,10 +298,10 @@ class Database(context: Context?) :
         }
         if (updatesMade) {
             //Log.d(TAG,"endTransaction() - Setting transaction successful.");
-            database!!.setTransactionSuccessful()
+            database.setTransactionSuccessful()
         }
         updatesMade = false
-        database!!.endTransaction()
+        database.endTransaction()
         withinTransaction = false
     }
 
@@ -364,10 +377,10 @@ class Database(context: Context?) :
             AND $COL_LON BETWEEN ${bb.west} AND ${bb.east};
         """.trimIndent()
 
-        readableDatabase.rawQuery(query, null).use { cursor ->
+        database.rawQuery(query, null).use { cursor ->
             if (cursor!!.moveToFirst()) {
                 do {
-                    val e = RfIdentification(cursor.getString(0), rfType)
+                    val e = getRfId(cursor.getString(0), rfType)
                     result.add(e)
                 } while (cursor.moveToNext())
             }
@@ -375,6 +388,12 @@ class Database(context: Context?) :
         if (DEBUG) Log.d(TAG, "getEmitters(bbox) returned ${result.size} $rfType emitters")
         return result
     }
+
+    private fun getRfId(dbId: String, type: EmitterType) =
+        when (type) {
+            EmitterType.WLAN2, EmitterType.WLAN5, EmitterType.WLAN6 -> RfIdentification(dbId.substringAfter('/'), type)
+            else -> RfIdentification(dbId, type)
+        }
 
     // get multiple emitters instead of querying one by one
     fun getEmitters(ids: Collection<RfIdentification>): List<RfEmitter> {
@@ -393,12 +412,12 @@ class Database(context: Context?) :
                 " WHERE " + COL_RFID + " IN (" + idString + ");")
 
         if (DEBUG) Log.d(TAG, "getEmitters(ids): $idString")
-        val c = readableDatabase.rawQuery(query, null)
+        val c = database.rawQuery(query, null)
         val emitters = mutableListOf<RfEmitter>()
         c.use { cursor ->
             if (cursor!!.moveToFirst()) {
                 do {
-                    val ei = EmitterInfo(
+                    val info = EmitterInfo(
                         trust = cursor.getInt(1),
                         latitude = cursor.getDouble(2),
                         longitude = cursor.getDouble(3),
@@ -406,7 +425,11 @@ class Database(context: Context?) :
                         radius_ew = cursor.getDouble(5).toFloat(),
                         note = cursor.getString(6) ?: ""
                     )
-                    val result = emitterFromDb(EmitterType.valueOf(cursor.getString(0)), cursor.getString(7), ei)
+                    val result = RfEmitter(
+                        getRfId(
+                            cursor.getString(7),
+                            EmitterType.valueOf(cursor.getString(0))
+                        ), info)
                     emitters.add(result)
                 } while (cursor.moveToNext())
             }
@@ -418,12 +441,6 @@ class Database(context: Context?) :
         return emitters
     }
 
-    private fun emitterFromDb(type: EmitterType, dbId: String, emitterInfo: EmitterInfo): RfEmitter =
-        if (type == EmitterType.MOBILE)
-            RfEmitter(type, dbId)
-        else
-            RfEmitter(type, dbId.substringAfter('|'), emitterInfo)
-
     /**
      * Get all the information we have on an RF emitter
      *
@@ -433,7 +450,6 @@ class Database(context: Context?) :
     fun getEmitter(identification: RfIdentification): RfEmitter? {
         val result: RfEmitter?
         val query = ("SELECT " +
-                COL_TYPE + ", " +
                 COL_TRUST + ", " +
                 COL_LAT + ", " +
                 COL_LON + ", " +
@@ -444,15 +460,15 @@ class Database(context: Context?) :
                 " WHERE " + COL_RFID + "='" + identification.uniqueId + "';")
 
         if (DEBUG) Log.d(TAG, "getEmitter(): $identification");
-        readableDatabase.rawQuery(query, null).use { cursor ->
+        database.rawQuery(query, null).use { cursor ->
             if (cursor!!.moveToFirst()) {
                 val ei = EmitterInfo(
-                    trust = cursor.getInt(1),
-                    latitude = cursor.getDouble(2),
-                    longitude = cursor.getDouble(3),
-                    radius_ns = cursor.getDouble(4).toFloat(),
-                    radius_ew = cursor.getDouble(5).toFloat(),
-                    note = cursor.getString(6) ?: ""
+                    trust = cursor.getInt(0),
+                    latitude = cursor.getDouble(1),
+                    longitude = cursor.getDouble(2),
+                    radius_ns = cursor.getDouble(3).toFloat(),
+                    radius_ew = cursor.getDouble(4).toFloat(),
+                    note = cursor.getString(5) ?: ""
                 )
                 result = RfEmitter(identification, ei)
             }
@@ -487,5 +503,5 @@ class EmitterInfo(
     val longitude: Double = 0.0,
     val radius_ns: Float = 0f,
     val radius_ew: Float = 0f,
-    val note: String = ""
+    val note: String? = ""
 )
