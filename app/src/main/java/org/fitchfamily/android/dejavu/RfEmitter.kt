@@ -64,7 +64,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
     private val ourCharacteristics = type.getRfCharacteristics()
     var trust: Int = ourCharacteristics.discoveryTrust
         private set
-    private var coverage: BoundingBox? = null
+    var coverage: BoundingBox? = null
+        private set
     var note: String? = "" // TODO: setting note currently triggers blacklist check, but this is not necessary when loading emitter from db!
         set(value) {
             if (field == value)
@@ -253,11 +254,11 @@ class RfEmitter(val type: EmitterType, val id: String) {
     fun updateLocation(gpsLoc: Location?) {
         if (status == EmitterStatus.STATUS_BLACKLISTED) return
         if ((gpsLoc == null) || (gpsLoc.accuracy > ourCharacteristics.requiredGpsAccuracy)) {
-            if (DEBUG) Log.d(TAG, "updateLocation($logString) No update because no GPS location or location inaccurate.")
+            if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location inaccurate.")
             return
         }
         if (coverage == null) {
-            if (DEBUG) Log.d(TAG, "updateLocation($logString) emitter is new.")
+            if (DEBUG) Log.d(TAG, "updateLocation($logString) - Emitter is new.")
             coverage = BoundingBox(gpsLoc.latitude, gpsLoc.longitude, 0.0f)
             changeStatus(EmitterStatus.STATUS_NEW, "updateLocation('$logString') New")
             return
@@ -518,10 +519,11 @@ class RfEmitter(val type: EmitterType, val id: String) {
          */
         fun EmitterType.getRfCharacteristics(): RfCharacteristics =
              when (this) {
-                WLAN2 -> characteristicsWlan24
-                WLAN5, WLAN6 -> characteristicsWlan5
-                GSM, CDMA, WCDMA, TDSCDMA, LTE, NR -> characteristicsMobile
-                BT, INVALID -> characteristicsUnknown
+                 WLAN2 -> characteristicsWlan24
+                 WLAN5, WLAN6 -> characteristicsWlan5
+                 GSM, CDMA, WCDMA, TDSCDMA, LTE, NR -> characteristicsMobile
+                 BT -> characteristicsBluetooth
+                 INVALID -> characteristicsUnknown
             }
 
         private val characteristicsWlan24 =
@@ -533,8 +535,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
             // so base the move distance on that.
             RfCharacteristics(
                 20F * METERS,
-                35F * METERS,
-                65F * METERS,
+                30F * METERS,
+                50F * METERS,
                 300F * METERS,  // Seen pretty long detection in very rural areas
                 0,
                 REQUIRED_TRUST / 3,
@@ -543,10 +545,21 @@ class RfEmitter(val type: EmitterType, val id: String) {
             )
         private val characteristicsWlan5 =
             RfCharacteristics(
-                10F * METERS,
-                15F * METERS,
-                25F * METERS,
+                13F * METERS,
+                20F * METERS,
+                30F * METERS,
                 100F * METERS,  // Seen pretty long detection in very rural areas
+                0,
+                REQUIRED_TRUST / 3,
+                1,
+                2
+            )
+        private val characteristicsBluetooth =
+            RfCharacteristics(
+                5F * METERS,
+                2F * METERS,
+                10F * METERS,
+                150F * METERS, // class 1 devices can have 100 m range
                 0,
                 REQUIRED_TRUST / 3,
                 1,
