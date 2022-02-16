@@ -94,10 +94,10 @@ internal class Cache(context: Context?) {
     }
 
     fun loadIds(ids: Collection<RfIdentification>) {
-        if (DEBUG) Log.d(TAG, "loadIds() - Fetching ids not in working set from db.")
-            if (db == null) return
-            val idsToLoad = ids.filterNot { workingSet.containsKey(it.uniqueId) }
-            if (idsToLoad.isEmpty()) return
+        if (db == null) return
+        val idsToLoad = ids.filterNot { workingSet.containsKey(it.uniqueId) }
+        if (DEBUG) Log.d(TAG, "loadIds() - Fetching ${idsToLoad.size} ids not in working set from db.")
+        if (idsToLoad.isEmpty()) return
         synchronized(this) {
             val emitters = db!!.getEmitters(idsToLoad)
             workingSet.putAll(emitters.associateBy { it.uniqueId })
@@ -158,11 +158,23 @@ internal class Cache(context: Context?) {
         }
     }
 
-    fun getEmitters(rfType: EmitterType, bb: BoundingBox): Set<RfIdentification> {
+    fun getIds(rfType: EmitterType, bb: BoundingBox): Set<RfIdentification> {
         synchronized(this) {
             return if (db == null)
                 emptySet()
-            else db!!.getEmitters(rfType, bb)
+            else db!!.getIds(rfType, bb)
+        }
+    }
+
+    fun getEmitters(rfTypes: Collection<EmitterType>, bb: BoundingBox): Set<RfEmitter> {
+        synchronized(this) {
+            return if (db == null)
+                emptySet()
+            else {
+                val emitters = db!!.getEmitters(rfTypes, bb)
+                workingSet.putAll(emitters.associateBy { it.uniqueId })
+                emitters
+            }
         }
     }
 

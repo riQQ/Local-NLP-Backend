@@ -368,11 +368,11 @@ class Database(context: Context?) :
      * @param bb The lat,lon bounding box.
      * @return A collection of RF emitter identifications
      */
-    fun getEmitters(rfType: EmitterType, bb: BoundingBox): HashSet<RfIdentification> {
+    fun getIds(rfType: EmitterType, bb: BoundingBox): HashSet<RfIdentification> {
         val result = HashSet<RfIdentification>()
         val query = """
             SELECT $COL_RFID FROM $TABLE_SAMPLES
-            WHERE $COL_TYPE = '$rfType'
+            WHERE $COL_TYPE = ${rfType.ordinal}
             AND $COL_LAT BETWEEN ${bb.south} AND ${bb.north}
             AND $COL_LON BETWEEN ${bb.west} AND ${bb.east};
         """.trimIndent()
@@ -385,7 +385,36 @@ class Database(context: Context?) :
                 } while (cursor.moveToNext())
             }
         }
-        if (DEBUG) Log.d(TAG, "getEmitters(bbox) returned ${result.size} $rfType emitters")
+        if (DEBUG) Log.d(TAG, "getIds(bbox) returned ${result.size} $rfType emitters")
+        return result
+    }
+
+    fun getEmitters(rfTypes: Collection<EmitterType>, bb: BoundingBox): HashSet<RfEmitter> {
+        val result = HashSet<RfEmitter>()
+        val query = """
+            SELECT $COL_RFID,$COL_TYPE,$COL_TRUST,$COL_LAT,$COL_LON,$COL_RAD_NS,$COL_RAD_EW,$COL_NOTE FROM $TABLE_SAMPLES
+            WHERE $COL_TYPE IN (${rfTypes.map { it.ordinal }.joinToString(",")})
+            AND $COL_LAT BETWEEN ${bb.south} AND ${bb.north}
+            AND $COL_LON BETWEEN ${bb.west} AND ${bb.east};
+        """.trimIndent()
+
+        database.rawQuery(query, null).use { cursor ->
+            if (cursor!!.moveToFirst()) {
+                do {
+                    val info = EmitterInfo(
+                        trust = cursor.getInt(2),
+                        latitude = cursor.getDouble(3),
+                        longitude = cursor.getDouble(4),
+                        radius_ns = cursor.getDouble(5).toFloat(),
+                        radius_ew = cursor.getDouble(6).toFloat(),
+                        note = cursor.getString(7) ?: ""
+                    )
+                    val e = RfEmitter(getRfId(cursor.getString(0), EmitterType.values()[cursor.getInt(1)]), info)
+                    result.add(e)
+                } while (cursor.moveToNext())
+            }
+        }
+        if (DEBUG) Log.d(TAG, "getEmitters(bbox) returned ${result.size} emitters")
         return result
     }
 
