@@ -550,8 +550,6 @@ class BackendService : LocationBackendService() {
     }
 
     // android likes providing the same lists with new timestamps, so compare using signal levels
-    //  TODO: but with this, no location will be provided instead of a potentially wrong location
-    //   also not so good... maybe user choice?
     private fun List<ScanResult>.sameAs(oldResults: List<ScanResult>): Boolean {
         if (size != oldResults.size) return false
         for (i in 0 until size) {
@@ -837,12 +835,9 @@ class BackendService : LocationBackendService() {
         // the last sync) are not found. However, the ARE in the seenSet, so we never
         // decrease trust for them anyway and. So syncing emitter cache before creating
         // the expectedSet is not necessary.
-        if (weightedAverageLocation != null // getExpected is slow when the database is large, so don't check every time //TODO: solve this via minimum time between checks
+        if (weightedAverageLocation != null // getExpected is slow when the database is large, so don't check every time
             && (getRfLocations(seenSet).size - locations!!.size > 2 || SystemClock.elapsedRealtime() % 8 == 1L)
         ) {
-            val expectedSet: MutableSet<RfIdentification> = HashSet()
-            val t = SystemClock.elapsedRealtime()
-//            val expectedSet2: MutableSet<RfEmitter> = HashSet()
             if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - getting expected emitters")
             // we create expectedSet exclusively to decrease trust of emitters that are not found,
             //  so there is no need to add emitters that cannot decrease trust
@@ -852,29 +847,16 @@ class BackendService : LocationBackendService() {
             //  than a single query, even if too much is returned
             // so we get all interesting emitters in the largest typicalRange and remove
             //  those that are too far away
+            // resulting check is a bit faster than the old way and better because it doesn't find
+            //  emitters that actually are too far away (because it only looks for typicalRange)
 
-            // TODO: multiple queries are slow!
-            //  better do a single query with the largest radius and filter results afterwards
-            //  filtering should be done by distance from location and the individual range of the emitter
-            //   use radius or do proper bbox check with ns and ew?
-            // TODO: what is not nice here: we might unnecessarily load all emitters in bbox from db
-            //   in the old version, only the ids are fetched, which is faster...
-            //   so it's unnecessary queries vs unnecessary amount of data
-            /* plan:
-             *  get emitter types that can decrease trust and that we can currently see
-             *    means: no bluetooth if bluetooth is off, no wlan6 if device doesn't support,...
-             *  get the largest radius of those
-             *  get ids at this location within radius
-             *  remove ids that are too far away (means: a 1. i need location, b. load all into cache)
-             *    i.e. either further than their typical range, or better: where our position is outside their bbox
-             */
             // get emitter types that can decrease trust and the device can see
             // filter by emitter types which we can currently see
 
             // wifi scan is possible if wifi is enabled or background scan is enabled AND airplane mode disabled
             val canScanWifi = wifiManager.let { it.isWifiEnabled || (it.isScanAlwaysAvailable && !airplaneMode) }
             // bluetooth currently not supported
-            //val canScamBluetooth = BluetoothAdapter.getDefaultAdapter().let { it.isEnabled && it.state == BluetoothAdapter.STATE_ON }
+            //val canScanBluetooth = BluetoothAdapter.getDefaultAdapter().let { it.isEnabled && it.state == BluetoothAdapter.STATE_ON }
             val emitterTypesToCheck = supportedEmittersThatCanDecreaseTrust.filter {
                 when (it) {
                     EmitterType.WLAN5, EmitterType.WLAN2, EmitterType.WLAN6 -> canScanWifi
@@ -884,29 +866,27 @@ class BackendService : LocationBackendService() {
             }
             // (currently) no need to check airplane and mobile mode (2g/3g/...) since towers can't decrease trust
 
-            // and get the emitters
-//            expectedSet2.addAll(getExpectedEmitters(weightedAverageLocation, emitterTypesToCheck))
+//            val expectedSet: MutableSet<RfIdentification> = HashSet()
+            val expectedSet: MutableSet<RfEmitter> = HashSet()
 
-            for (emitterType in emitterTypesToCheck) {
-                expectedSet.addAll(getExpectedIds(weightedAverageLocation, emitterType))
-            }
+            // and get the emitters
+            expectedSet.addAll(getExpectedEmitters(weightedAverageLocation, emitterTypesToCheck))
+
+//            for (emitterType in emitterTypesToCheck) {
+//                expectedSet.addAll(getExpectedIds(weightedAverageLocation, emitterType))
+//            }
             // only do if gps location has updated since the last period
             if (gpsLocation?.timeOfUpdate ?: 0 > oldLocationUpdate) {
-//                expectedSet2.addAll(getExpectedEmitters(gpsLocation?.location, emitterTypesToCheck))
-                val location = gpsLocation!!.location
+                expectedSet.addAll(getExpectedEmitters(gpsLocation?.location, emitterTypesToCheck))
+/*                val location = gpsLocation!!.location
                 for (emitterType in emitterTypesToCheck) {
                     expectedSet.addAll(getExpectedIds(location, emitterType))
                 }
-            }
-            emitterCache!!.loadIds(expectedSet)
+*/            }
+//            emitterCache!!.loadIds(expectedSet)
             // decrease trust of emitters expected, but not found
-//        expectedSet2.forEach { if (!seenSet.contains(it.rfIdentification)) emitterCache!![it.rfIdentification].decrementTrust() }
-            expectedSet.forEach {
-                if (!seenSet.contains(it)) {
-                    emitterCache!![it].decrementTrust()
-                }
-            }
-            if (DEBUG) Log.i(TAG, "endOfPeriodProcessing() - checking expected emitters took ${SystemClock.elapsedRealtime() - t} ms")
+            expectedSet.forEach { if (!seenSet.contains(it.rfIdentification)) emitterCache!![it.rfIdentification].decrementTrust() }
+//            expectedSet.forEach { if (!seenSet.contains(it)) emitterCache!![it].decrementTrust() }
         }
 
         // Sync all of our changes to the on flash database and reset the RF emitters we've seen.
