@@ -567,15 +567,14 @@ class BackendService : LocationBackendService() {
      * no thread currently exists, start one.
      *
      * @param observations A set of RF emitter observations (all must be of the same type)
-     * @param timeMs The time the observations were made. (ends up unused, thus commented)
+//     * @param timeMs The time the observations were made. (ends up unused, thus commented)
      */
     @Synchronized
     private fun queueForProcessing(observations: Collection<Observation> /*, timeMs: Long*/) {
-        // TODO: set location null if location is too old?
-        val loc = if (gpsLocation != null && notNullIsland(gpsLocation!!.location))
-                gpsLocation!!.location
-            else
-                null
+        // ignore location if it is old, we don't want to update emitters with outdated locations
+        val loc = gpsLocation?.location?.takeIf {
+            gpsLocation!!.timeOfUpdate > oldLocationUpdate && notNullIsland(it)
+        }
         val work = WorkItem(observations, loc /*, timeMs*/)
         workQueue.offer(work)
         if (backgroundJob.isActive)
@@ -653,7 +652,7 @@ class BackendService : LocationBackendService() {
      *
      * @param emitters The emitters we have just observed
      * @param gps The GPS position at the time the observations were collected.
-     * @param curTime The time the observations were collected (not used, thus commented)
+//     * @param curTime The time the observations were collected (not used, thus commented)
      */
     @Synchronized
     private fun updateEmitters(emitters: Collection<RfEmitter>, gps: Location? /*, curTime: Long*/) {
@@ -952,7 +951,7 @@ class BackendService : LocationBackendService() {
         const val MINIMUM_ASU = 1
 
         // KPH -> Meters/millisec (KPH * 1000) / (60*60*1000) -> KPH/3600
-        const val EXPECTED_SPEED = 120.0f / 3600 // 120KPH (74 MPH)
+//        const val EXPECTED_SPEED = 120.0f / 3600 // 120KPH (74 MPH)
         private const val NULL_ISLAND_DISTANCE = 1000f
         private val nullIsland = Location(LOCATION_PROVIDER).apply {
             latitude = 0.0
@@ -968,7 +967,7 @@ class BackendService : LocationBackendService() {
          * is about 0-130 kph in 6 seconds
          */
         private const val GPS_COORDINATE_NOISE = 3.0
-        private const val POSITION_COORDINATE_NOISE = 6.0
+//        private const val POSITION_COORDINATE_NOISE = 6.0
         private var instance: BackendService? = null
 
         // Stuff for scanning WiFi APs
