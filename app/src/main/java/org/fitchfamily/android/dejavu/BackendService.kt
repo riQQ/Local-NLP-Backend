@@ -37,6 +37,7 @@ import kotlinx.coroutines.*
 import org.fitchfamily.android.dejavu.RfEmitter.Companion.getRfCharacteristics
 import org.microg.nlp.api.LocationBackendService
 import org.microg.nlp.api.MPermissionHelperActivity
+import java.lang.reflect.Method
 import java.util.*
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.math.abs
@@ -60,31 +61,14 @@ class BackendService : LocationBackendService() {
         }
     }
     private var gpsLocation: Kalman? = null // Filtered GPS (because GPS is so bad on Moto G4 Play)
-    private var oldLocationUpdate = 0L // store last update of the previous period to allow checking whether gpsLocation has changed
-    // TODO: do i need 3 different scopes? information is not clear here...
+    // TODO: do we really need different scopes and jobs here?
+    //  probably 1 scope is enough
+    //  is there some way to have one job and start it again, instead of creating a new one on every mobile scan?
     private val mobileScanScope = CoroutineScope(Job() + Dispatchers.Default) // scope for scanning mobile towers, to be cancelled at end of period
+    private var mobileJob = mobileScanScope.launch { }
     private val backgroundScope = CoroutineScope(Job() + Dispatchers.Default) // scope for background processing
-    private val wifiScope = CoroutineScope(Job() + Dispatchers.Default) // processing wifi results and doing
     private var backgroundJob: Job = backgroundScope.launch { }
-
-    private val is5GhzSupported: Boolean by lazy {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP)
-            wifiManager.is5GHzBandSupported
-        else
-            true // assume supported
-    }
-    // TODO: enable after API change
-/*    private val is6GhzSupported = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
-            wifiManager.is6GHzBandSupported
-        else
-            false // old devices most likely don't support it
-*/
-    private val supportedEmittersThatCanDecreaseTrust by lazy {
-        emittersThatCanDecreaseTrust
-        // TODO: android wrongly claims wlan5 is not supported -> better way to check?
-        //   without things like checking every wifi whether it's 5 ghz
-//            .filterNot { it == EmitterType.WLAN5 && !is5GhzSupported }
-    }
+    private val wifiScope = CoroutineScope(Job() + Dispatchers.Default) // processing wifi results and doing
 
     //
     // Periodic process information.
@@ -98,6 +82,8 @@ class BackendService : LocationBackendService() {
     private var nextMobileScanTime: Long = 0
     private var nextWlanScanTime: Long = 0
     private var nextReportTime: Long = 0
+    private var oldLocationUpdate = 0L // store last update of the previous period to allow checking whether gpsLocation has changed
+    private var oldScanResults = listOf<ScanResult>() // results of previous wifi scan
 
     //
     // We want only a single background thread to do all the work but we have a couple
@@ -111,10 +97,36 @@ class BackendService : LocationBackendService() {
     )
 
     private val workQueue: Queue<WorkItem> = ConcurrentLinkedQueue()
-    private var oldScanResults = listOf<ScanResult>()
 
+    // information about current device capabilities
     private val airplaneMode get() = Settings.Global.getInt(applicationContext.contentResolver,
         Settings.Global.AIRPLANE_MODE_ON, 0) != 0
+    private val canScanWifi get() = wifiManager.isWifiEnabled || (wifiManager.isScanAlwaysAvailable && !airplaneMode)
+
+    // remove WiFi standards the device is not capable of
+    // if mobile towers would be allowed to decrease trust, checks should be added here
+    private val supportedEmittersThatCanDecreaseTrust by lazy {
+        val is5GhzSupported: Boolean by lazy {
+            // there is wifiManager.is5GHzBandSupported, but it's broken and may return false
+            //  if it's actually supported -> use https://stackoverflow.com/a/43695813
+            val cls = Class.forName("android.net.wifi.WifiManager")
+            val method: Method = cls.getMethod("isDualBandSupported")
+            val invoke: Any = method.invoke(wifiManager)
+            invoke as Boolean
+        }
+        // TODO: enable after API change
+    val is6GhzSupported = false
+/*        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+            wifiManager.is6GHzBandSupported
+        else
+            false // old devices most likely don't support it
+*/
+        emittersThatCanDecreaseTrust.filterNot {
+            it == EmitterType.WLAN5 && !is5GhzSupported
+                || it == EmitterType.WLAN6 && !is6GhzSupported
+        }
+    }
+
 
     /**
      * We are starting to run, get the resources we need to do our job.
@@ -144,6 +156,7 @@ class BackendService : LocationBackendService() {
         } else {
             Log.d(TAG, "onOpen() - Permissions not granted, soft fail.")
         }
+        mobileScanScope.cancel() // need to cancel, otherwise it's active even without anything running
     }
 
     /**
@@ -245,10 +258,7 @@ class BackendService : LocationBackendService() {
 
             if (DEBUG) Log.d(TAG, "scanAllSensors() - starting scans")
             startWiFiScan()
-            if (!airplaneMode)
-                startMobileScan()
-            else
-                if (DEBUG) Log.d(TAG, "scanAllSensors() - airplane mode enabled, not scanning for mobile towers")
+            startMobileScan()
         }
     }
 
@@ -265,13 +275,14 @@ class BackendService : LocationBackendService() {
             if (DEBUG) Log.d(TAG, "startWiFiScan() - need to wait before starting next scan")
             return
         }
-        nextWlanScanTime = currentProcessTime + WLAN_SCAN_INTERVAL
-        if (!wifiScanInProgress) {
-            if (wifiManager.isWifiEnabled || wifiManager.isScanAlwaysAvailable) {
+        // in case wifi scan doesn't return anything we simply allow starting another one
+        if (!wifiScanInProgress || currentProcessTime > nextWlanScanTime + 3 * WLAN_SCAN_INTERVAL) {
+            nextWlanScanTime = currentProcessTime + WLAN_SCAN_INTERVAL
+            if (canScanWifi) {
                 if (DEBUG) Log.d(TAG, "startWiFiScan() - Starting WiFi collection.")
                 wifiScanInProgress = true
                 wifiManager.startScan()
-            }
+            } else if (DEBUG) Log.d(TAG, "startWiFiScan() - WiFi scan is disabled.")
         } else if (DEBUG) Log.d(TAG, "startWiFiScan() - WiFi scan in progress, not starting.")
     }
 
@@ -286,15 +297,17 @@ class BackendService : LocationBackendService() {
         // coverage area for several seconds. No need to sample more often than that and we save
         // resources on the phone.
         val currentProcessTime = SystemClock.elapsedRealtime()
-        if (currentProcessTime < nextMobileScanTime || mobileScanScope.isActive) {
+        if (currentProcessTime < nextMobileScanTime || mobileJob.isActive) {
             if (DEBUG) Log.d(TAG, "startMobileScan() - need to wait before starting next scan")
             return
         }
         nextMobileScanTime = currentProcessTime + MOBILE_SCAN_INTERVAL
 
         // Scanning towers takes some time, so do it in a coroutine
-        if (DEBUG) Log.d(TAG,"startMobileScan() - Starting mobile signal scan.")
-        mobileScanScope.launch { scanMobile() }
+        if (!airplaneMode) {
+            if (DEBUG) Log.d(TAG,"startMobileScan() - Starting mobile signal scan.")
+            mobileJob = mobileScanScope.launch { scanMobile() }
+        } else if (DEBUG) Log.d(TAG,"startMobileScan() - Airplane mode is enabled.")
     }
 
     /**
@@ -305,9 +318,9 @@ class BackendService : LocationBackendService() {
         // Log.d(TAG, "scanMobile() - calling getMobileTowers().");
         val observations: Collection<Observation> = getMobileTowers()
         if (observations.isNotEmpty()) {
-            if (DEBUG) Log.d(TAG, "scanMobile() " + observations.size + " records to be queued for processing.")
+            if (DEBUG) Log.d(TAG, "scanMobile() - " + observations.size + " records to be queued for processing.")
             queueForProcessing(observations/*, SystemClock.elapsedRealtime()*/)
-        }
+        } else if (DEBUG) Log.d(TAG, "scanMobile() - no results")
     }
 
     /**
@@ -334,7 +347,6 @@ class BackendService : LocationBackendService() {
         }
         if (allCells.isEmpty()) return deprecatedGetMobileTowers()
 
-        val intMax = Int.MAX_VALUE
         val alternativeMnc by lazy { // determine mnc the other way not more than once per call of getMobileTowers
             telephonyManager!!.networkOperator?.let { if (it.length > 5) it.substring(3) else null }
         }
@@ -519,33 +531,35 @@ class BackendService : LocationBackendService() {
      */
     @Synchronized
     private fun onWiFisChanged() {
-        if (emitterCache != null) {
-            val scanResults = wifiManager.scanResults
-            if (scanResults.sameAs(oldScanResults)) {
-                if (DEBUG) Log.d(TAG, "onWiFisChanged(): scan results are the same as old results")
-                //return // TODO: only log for now, maybe do something later
-            }
-            val observations = hashSetOf<Observation>()
-            if (DEBUG) Log.d(TAG, "onWiFisChanged(): " + scanResults.size + " scan results")
-            for (scanResult in scanResults) {
-                val bssid = scanResult.BSSID.lowercase().replace(".", ":")
-//                val rfType = if (is5GHz(scanResult)) EmitterType.WLAN5
-//                    else EmitterType.WLAN2
-                val rfType = scanResult.getWifiType()
-                if (DEBUG) Log.v(TAG, "rfType=$rfType, ScanResult: $scanResult")
-                val observation = Observation(bssid,
-                    rfType,
-                    WifiManager.calculateSignalLevel(scanResult.level, MAXIMUM_ASU),
-                    scanResult.SSID
-                )
-                observations.add(observation)
-            }
-            if (observations.isNotEmpty()) {
-                if (DEBUG) Log.d(TAG, "onWiFisChanged(): " + observations.size + " observations")
-                queueForProcessing(observations/*, SystemClock.elapsedRealtime()*/)
-            }
-            oldScanResults = scanResults
+        if (emitterCache == null) {
+            wifiScanInProgress = false
+            return
         }
+        val scanResults = wifiManager.scanResults
+        if (scanResults.sameAs(oldScanResults)) {
+            if (DEBUG) Log.d(TAG, "onWiFisChanged(): scan results are the same as old results")
+            //return // TODO: only log for now, maybe do something later
+        }
+        val observations = hashSetOf<Observation>()
+        if (DEBUG) Log.d(TAG, "onWiFisChanged(): " + scanResults.size + " scan results")
+        for (scanResult in scanResults) {
+            val bssid = scanResult.BSSID.lowercase().replace(".", ":")
+//            val rfType = if (is5GHz(scanResult)) EmitterType.WLAN5
+//                else EmitterType.WLAN2
+            val rfType = scanResult.getWifiType()
+            if (DEBUG) Log.v(TAG, "rfType=$rfType, ScanResult: $scanResult")
+            val observation = Observation(bssid,
+                rfType,
+                WifiManager.calculateSignalLevel(scanResult.level, MAXIMUM_ASU),
+                scanResult.SSID
+            )
+            observations.add(observation)
+        }
+        if (observations.isNotEmpty()) {
+            if (DEBUG) Log.d(TAG, "onWiFisChanged(): " + observations.size + " observations")
+            queueForProcessing(observations/*, SystemClock.elapsedRealtime()*/)
+        }
+        oldScanResults = scanResults
         wifiScanInProgress = false
     }
 
@@ -641,7 +655,7 @@ class BackendService : LocationBackendService() {
 
         if (currentProcessTime >= delayUntil) {
             nextReportTime = currentProcessTime + REPORTING_INTERVAL
-            mobileScanScope.cancel() // stop the mobile scan if it's still happening
+            mobileJob.cancel() // stop the mobile scan if it's still happening
             endOfPeriodProcessing()
         } else if (DEBUG && currentProcessTime > nextReportTime)
             Log.d(TAG, "backgroundProcessing() - Delaying endOfPeriodProcessing because WiFi scan in progress")
@@ -805,6 +819,7 @@ class BackendService : LocationBackendService() {
         //  start it immediately when starting scans (if not running)
         //  put a delay here (suspend fun)
         //  and then, if wifi scan running or queue not empty, wait a bit longer
+        //  or... there are mor possibilities with jobs and waiting...
 
         // load all emitters into the cache to avoid several single database transactions
         // not necessary, actually this is done be getRfLocations, which loads the seenSet
@@ -853,7 +868,6 @@ class BackendService : LocationBackendService() {
             // filter by emitter types which we can currently see
 
             // wifi scan is possible if wifi is enabled or background scan is enabled AND airplane mode disabled
-            val canScanWifi = wifiManager.let { it.isWifiEnabled || (it.isScanAlwaysAvailable && !airplaneMode) }
             // bluetooth currently not supported
             //val canScanBluetooth = BluetoothAdapter.getDefaultAdapter().let { it.isEnabled && it.state == BluetoothAdapter.STATE_ON }
             val emitterTypesToCheck = supportedEmittersThatCanDecreaseTrust.filter {
@@ -884,7 +898,8 @@ class BackendService : LocationBackendService() {
 */            }
 //            emitterCache!!.loadIds(expectedSet)
             // decrease trust of emitters expected, but not found
-            expectedSet.forEach { if (!seenSet.contains(it.rfIdentification)) emitterCache!![it.rfIdentification].decrementTrust() }
+            expectedSet.forEach { if (!seenSet.contains(it.rfIdentification))
+                emitterCache!![it.rfIdentification].decrementTrust() }
 //            expectedSet.forEach { if (!seenSet.contains(it)) emitterCache!![it].decrementTrust() }
         }
 
@@ -957,6 +972,7 @@ class BackendService : LocationBackendService() {
             latitude = 0.0
             longitude = 0.0
         }
+        private const val intMax = Int.MAX_VALUE
 
         /**
          * Process noise for lat and lon.
@@ -1049,7 +1065,6 @@ class BackendService : LocationBackendService() {
                  loc1.distanceTo(loc2).toDouble()
             else
                 distance(loc1, loc2.latitude, loc2.longitude)
-
 
     }
 }

@@ -538,7 +538,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 30F * METERS,
                 50F * METERS,
                 300F * METERS,  // Seen pretty long detection in very rural areas
-                0,
+                1,
                 REQUIRED_TRUST / 3,
                 1,
                 2
@@ -549,7 +549,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 20F * METERS,
                 30F * METERS,
                 100F * METERS,  // Seen pretty long detection in very rural areas
-                0,
+                1,
                 REQUIRED_TRUST / 3,
                 1,
                 2
