@@ -156,7 +156,6 @@ class BackendService : LocationBackendService() {
         } else {
             Log.d(TAG, "onOpen() - Permissions not granted, soft fail.")
         }
-        mobileScanScope.cancel() // need to cancel, otherwise it's active even without anything running
     }
 
     /**
@@ -315,7 +314,7 @@ class BackendService : LocationBackendService() {
      * to the queue for background processing.
      */
     private fun scanMobile() {
-        // Log.d(TAG, "scanMobile() - calling getMobileTowers().");
+        // if (DEBUG) Log.d(TAG, "scanMobile() - calling getMobileTowers().")
         val observations: Collection<Observation> = getMobileTowers()
         if (observations.isNotEmpty()) {
             if (DEBUG) Log.d(TAG, "scanMobile() - " + observations.size + " records to be queued for processing.")
