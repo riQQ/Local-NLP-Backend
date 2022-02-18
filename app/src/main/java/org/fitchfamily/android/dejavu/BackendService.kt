@@ -1053,7 +1053,7 @@ class BackendService : LocationBackendService() {
 
         // simple approximate distance calculation, accurate enough if latitude difference is small
         //  like few 100 m, or maybe several km
-        private fun distance(loc1: Location, lat2: Double, lon2: Double): Double {
+        fun distance(loc1: Location, lat2: Double, lon2: Double): Double {
             val distLat = (loc1.latitude - lat2) * DEG_TO_METER
             val distLon = (loc1.longitude - lon2) * DEG_TO_METER * cos(Math.toRadians(loc1.latitude))
             return sqrt(distLat * distLat + distLon * distLon)

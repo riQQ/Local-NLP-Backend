@@ -22,6 +22,7 @@ package org.fitchfamily.android.dejavu
 import android.location.Location
 import android.os.Bundle
 import android.util.Log
+import org.fitchfamily.android.dejavu.BackendService.Companion.distance
 import org.fitchfamily.android.dejavu.EmitterType.*
 
 /**
@@ -255,7 +256,22 @@ class RfEmitter(val type: EmitterType, val id: String) {
      */
     fun updateLocation(gpsLoc: Location?) {
         if (status == EmitterStatus.STATUS_BLACKLISTED) return
-        if ((gpsLoc == null) || (gpsLoc.accuracy > ourCharacteristics.requiredGpsAccuracy)) {
+        // problem: if we have a non-blacklisted but mobile emitter, we can never update if
+        //  we don't get good accuracy. e.g. wifi on a train, we detected it outside at the station
+        //  but cannot increase radius from inside the train, because accuracy is bad
+        //  so dejavu will report our location at the train station, even if we are far away and
+        //  have a (not sufficiently accurate) gps location
+        // attempted solution: if our location is far away from the emitter, we still update it.
+        //  means: we check distance to center, and if it's more than twice maximum range, we update
+        //  so this is purely to increase bbox enough to have the emitter ignored for location reports
+        //   (maybe better to add some emitterstatus ignored from now on?)
+        if (gpsLoc == null
+            || (gpsLoc.accuracy > ourCharacteristics.requiredGpsAccuracy
+                    && (coverage == null
+                        || distance(gpsLoc, coverage!!.center_lat, coverage!!.center_lon)
+                            < type.getRfCharacteristics().moveDetectDistance * 2
+                       )
+            )) {
             if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location inaccurate.")
             return
         }
@@ -283,6 +299,9 @@ class RfEmitter(val type: EmitterType, val id: String) {
             // simply update bbox and treat large bounding boxes like blacklisted
             //  but don't set emitter status to blacklisted, or the emitter will be dropped and
             //  soon added again to DB
+            // maybe introduce some status_ignored, if bbox is too large
+            //  effectively it should be similar to blacklisted, but not cause he emitter
+            //  to be dropped from db, but to remain in db unchanged forever (not great, but how to do it better?)
             changeStatus(EmitterStatus.STATUS_CHANGED, "updateLocation('$logString') BBOX update")
         }
     }
