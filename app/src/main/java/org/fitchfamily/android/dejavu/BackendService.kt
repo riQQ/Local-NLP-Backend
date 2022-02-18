@@ -347,7 +347,7 @@ class BackendService : LocationBackendService() {
         if (allCells.isEmpty()) return deprecatedGetMobileTowers()
 
         val alternativeMnc by lazy { // determine mnc the other way not more than once per call of getMobileTowers
-            telephonyManager!!.networkOperator?.let { if (it.length > 5) it.substring(3) else null }
+            telephonyManager!!.networkOperator?.let { if (it.length > 4) it.substring(3) else null }
         }
         if (DEBUG) Log.d(TAG, "getMobileTowers(): getAllCellInfo() returned " + allCells.size + " records.")
         for (info in allCells) {
