@@ -261,15 +261,15 @@ class RfEmitter(val type: EmitterType, val id: String) {
         //  but cannot increase radius from inside the train, because accuracy is bad
         //  so dejavu will report our location at the train station, even if we are far away and
         //  have a (not sufficiently accurate) gps location
-        // attempted solution: if our location is far away from the emitter, we still update it.
-        //  means: we check distance to center, and if it's more than twice maximum range, we update
-        //  so this is purely to increase bbox enough to have the emitter ignored for location reports
+        // attempted solution: if gps location is far away from the emitter, we still update the emitter
+        //  this is purely for cases where in the end the bbox is large enough to have the
+        //  emitter ignored for future location reports
         //   (maybe better to add some emitterstatus ignored from now on?)
         if (gpsLoc == null
             || (gpsLoc.accuracy > ourCharacteristics.requiredGpsAccuracy
                     && (coverage == null
                         || distance(gpsLoc, coverage!!.center_lat, coverage!!.center_lon)
-                            < type.getRfCharacteristics().moveDetectDistance * 2
+                            < (type.getRfCharacteristics().moveDetectDistance + gpsLoc.accuracy) * 2
                        )
             )) {
             if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location inaccurate.")
