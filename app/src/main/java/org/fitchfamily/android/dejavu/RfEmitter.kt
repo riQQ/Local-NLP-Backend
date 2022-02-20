@@ -485,7 +485,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
 
         private val splitRegex = "[^a-z]".toRegex() // for splitting SSID into "words"
         private val blacklistWords = setOf(
-            "android", "ipad", "phone", "motorola", // mobile tethering
+            "android", "androidap", "ipad", "phone", "motorola", // mobile tethering
             "mobile", // sounds like name for mobile hotspot
             "deinbus", "ecolines", "eurolines", "fernbus", "flixbus", "muenchenlinie",
             "postbus", "skanetrafiken", "oresundstag", "regiojet", // transport
