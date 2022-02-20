@@ -40,9 +40,7 @@ import org.microg.nlp.api.MPermissionHelperActivity
 import java.lang.reflect.Method
 import java.util.*
 import java.util.concurrent.ConcurrentLinkedQueue
-import kotlin.math.abs
-import kotlin.math.cos
-import kotlin.math.sqrt
+import kotlin.math.*
 
 /**
  * Created by tfitch on 8/27/17.
@@ -794,7 +792,7 @@ class BackendService : LocationBackendService() {
         // If the location is within range of all current members of the
         // group, then we are compatible.
         for (other in locGroup) {
-            val testDistance = (distance(location, other) -
+            val testDistance = (location.distanceTo(other) -
                     location.accuracy -
                     other.accuracy)
             if (testDistance > 0.0) {
@@ -1020,7 +1018,7 @@ class BackendService : LocationBackendService() {
          * @return boolean True if away from lat,lon of 0,0
          */
         fun notNullIsland(loc: Location): Boolean {
-            return distance(nullIsland, loc) > NULL_ISLAND_DISTANCE
+            return nullIsland.distanceTo(loc) > NULL_ISLAND_DISTANCE
         }
 
         /**
@@ -1052,18 +1050,11 @@ class BackendService : LocationBackendService() {
         }
 
         // simple approximate distance calculation, accurate enough if latitude difference is small
-        //  like few 100 m, or maybe several km
         fun distance(loc1: Location, lat2: Double, lon2: Double): Double {
             val distLat = (loc1.latitude - lat2) * DEG_TO_METER
             val distLon = (loc1.longitude - lon2) * DEG_TO_METER * cos(Math.toRadians(loc1.latitude))
             return sqrt(distLat * distLat + distLon * distLon)
         }
-
-        private fun distance(loc1: Location, loc2: Location): Double =
-            if (abs(loc1.latitude) > 80.0)
-                 loc1.distanceTo(loc2).toDouble()
-            else
-                distance(loc1, loc2.latitude, loc2.longitude)
 
     }
 }
