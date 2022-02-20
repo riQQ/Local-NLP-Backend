@@ -326,7 +326,7 @@ class Database(context: Context?) :
     fun insert(emitter: RfEmitter) {
         if (DEBUG) Log.d(TAG, "Inserting " + emitter.logString + " into db")
         sqlSampleInsert!!.bindString(1, emitter.uniqueId)
-        sqlSampleInsert!!.bindString(2, emitter.type.toString())
+        sqlSampleInsert!!.bindString(2, emitter.type.ordinal.toString())
         sqlSampleInsert!!.bindString(3, emitter.trust.toString())
         sqlSampleInsert!!.bindString(4, emitter.lat.toString())
         sqlSampleInsert!!.bindString(5, emitter.lon.toString())
