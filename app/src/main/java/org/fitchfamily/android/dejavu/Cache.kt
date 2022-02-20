@@ -144,8 +144,6 @@ internal class Cache(context: Context?) {
                 }
                 db!!.endTransaction()
             }
-            // TODO: actually dropped emitters are not removed from the working set
-            //  -> another reason to let cache handle the db stuff, and not RfEmitter...
 
             // Remove aged out items from cache
             agedSet.forEach {

@@ -163,8 +163,6 @@ class RfEmitter(val type: EmitterType, val id: String) {
      *
      * @param db The database we should write our data to.
      */
-    // TODO: maybe return what should happen to the emitter, and let the cache
-    //  handle the mass update (because very often there are db updates for several emitters)
     fun sync(db: Database) {
         var newStatus = status
         when (status) {
