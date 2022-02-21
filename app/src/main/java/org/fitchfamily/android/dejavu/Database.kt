@@ -389,7 +389,8 @@ class Database(context: Context?) :
         return result
     }
 
-    fun getEmitters(rfTypes: Collection<EmitterType>, bb: BoundingBox): HashSet<RfEmitter> {
+    fun getEmitters(rfTypes: Collection<EmitterType>, bb: BoundingBox): Set<RfEmitter> {
+        if (rfTypes.isEmpty()) return emptySet()
         val result = HashSet<RfEmitter>()
         val query = """
             SELECT $COL_RFID,$COL_TYPE,$COL_TRUST,$COL_LAT,$COL_LON,$COL_RAD_NS,$COL_RAD_EW,$COL_NOTE FROM $TABLE_SAMPLES
