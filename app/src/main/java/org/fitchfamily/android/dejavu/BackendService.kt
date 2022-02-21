@@ -369,7 +369,7 @@ class BackendService : LocationBackendService() {
                 if (id.ci == intMax || id.pci == intMax || id.tac == intMax)
                     continue
 
-                val idStr = "LTE/$mccString/$mncString/${id.ci}/${id.pci}/${id.tac}"
+                val idStr = "${EmitterType.LTE}/$mccString/$mncString/${id.ci}/${id.pci}/${id.tac}"
                 val asu = info.cellSignalStrength.asuLevel * MAXIMUM_ASU / 97
                 val o = Observation(idStr, EmitterType.LTE, asu)
                 observations.add(o)
@@ -395,7 +395,7 @@ class BackendService : LocationBackendService() {
                 if (id.lac == intMax || id.lac == 0 || id.cid == intMax)
                     continue
 
-                val idStr = "GSM/$mccString/$mncString/${id.lac}/${id.cid}"
+                val idStr = "${EmitterType.GSM}/$mccString/$mncString/${id.lac}/${id.cid}"
                 val asu = info.cellSignalStrength.asuLevel
                 val o = Observation(idStr, EmitterType.GSM, asu)
                 observations.add(o)
@@ -420,7 +420,7 @@ class BackendService : LocationBackendService() {
                 if (id.lac == intMax || id.lac == 0 || id.cid == intMax)
                     continue
 
-                val idStr = "WCDMA/$mccString/$mncString/${id.lac}/${id.cid}"
+                val idStr = "${EmitterType.WCDMA}/$mccString/$mncString/${id.lac}/${id.cid}"
                 val asu = info.cellSignalStrength.asuLevel
                 val o = Observation(idStr, EmitterType.WCDMA, asu)
                 observations.add(o)
@@ -432,7 +432,7 @@ class BackendService : LocationBackendService() {
                 if (id.networkId == intMax || id.systemId == intMax || id.basestationId == intMax)
                     continue
 
-                val idStr = "CDMA/${id.networkId}/${id.systemId}/${id.basestationId}"
+                val idStr = "${EmitterType.CDMA}/${id.networkId}/${id.systemId}/${id.basestationId}"
                 val asu = info.cellSignalStrength.asuLevel
                 val o = Observation(idStr, EmitterType.CDMA, asu)
                 observations.add(o)
@@ -465,7 +465,7 @@ class BackendService : LocationBackendService() {
         val mnc = mncString.substring(3).toIntOrNull() ?: return observations
         val info = telephonyManager!!.cellLocation
         if (info != null && info is GsmCellLocation) {
-            val idStr = "GSM/$mcc/$mnc/${info.lac}/${info.cid}"
+            val idStr = "${EmitterType.GSM}/$mcc/$mnc/${info.lac}/${info.cid}"
             val o = Observation(idStr, EmitterType.GSM, MINIMUM_ASU)
             observations.add(o)
         } else {
@@ -476,9 +476,7 @@ class BackendService : LocationBackendService() {
             if (neighbors != null && neighbors.isNotEmpty()) {
                 for (neighbor in neighbors) {
                     if (neighbor.cid > 0 && neighbor.lac > 0) {
-                        val idStr = "GSM" + "/" + mcc + "/" +
-                                mnc + "/" + neighbor.lac + "/" +
-                                neighbor.cid
+                        val idStr = "${EmitterType.GSM}/$mcc/$mnc/${neighbor.lac}/${neighbor.cid}"
                         val o = Observation(idStr, EmitterType.GSM, neighbor.rssi)
                         observations.add(o)
                     }
