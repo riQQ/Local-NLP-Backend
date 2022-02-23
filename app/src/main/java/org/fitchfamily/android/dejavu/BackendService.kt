@@ -112,7 +112,7 @@ class BackendService : LocationBackendService() {
             val invoke: Any = method.invoke(wifiManager)
             invoke as Boolean
         }
-        // TODO: enable after API change
+    // TODO: enable after API change
     val is6GhzSupported = false
 /*        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
             wifiManager.is6GHzBandSupported
@@ -359,11 +359,11 @@ class BackendService : LocationBackendService() {
                     else
                         id.mcc.takeIf { it != intMax }?.toString() ?: continue
                 val mncString: String = (
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-                        id.mncString
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                        id.mncString.substringAfter("0")
                     else
                         id.mnc.takeIf { it != intMax }?.toString()
-                        ) ?: alternativeMnc ?: continue
+                    ) ?: alternativeMnc ?: continue
 
                 // CellIdentityLte accessors all state Integer.MAX_VALUE is returned for unknown values.
                 if (id.ci == intMax || id.pci == intMax || id.tac == intMax)
@@ -384,11 +384,11 @@ class BackendService : LocationBackendService() {
                     else
                         id.mcc.takeIf { it != intMax }?.toString() ?: continue
                 val mncString: String = (
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-                            id.mncString
-                        else
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                            id.mncString.substringAfter("0")
+                    else
                             id.mnc.takeIf { it != intMax }?.toString()
-                        ) ?: alternativeMnc ?: continue
+                    ) ?: alternativeMnc ?: continue
 
                 // CellIdentityGsm accessors all state Integer.MAX_VALUE is returned for unknown values.
                 // analysis of results show frequent invalid LAC of 0 messing with results
@@ -410,11 +410,11 @@ class BackendService : LocationBackendService() {
                     else
                         id.mcc.takeIf { it != intMax }?.toString() ?: continue
                 val mncString: String = (
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-                        id.mncString
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+                        id.mncString.substringAfter("0")
                     else
                         id.mnc.takeIf { it != intMax }?.toString()
-                        ) ?: alternativeMnc ?: continue
+                    ) ?: alternativeMnc ?: continue
 
                 // CellIdentityWcdma accessors all state Integer.MAX_VALUE is returned for unknown values.
                 if (id.lac == intMax || id.lac == 0 || id.cid == intMax)
