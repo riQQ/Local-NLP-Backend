@@ -360,7 +360,7 @@ class BackendService : LocationBackendService() {
                         id.mcc.takeIf { it != intMax }?.toString() ?: continue
                 val mncString: String = (
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-                        id.mncString.substringAfter("0")
+                        id.mncString?.substringAfter("0")
                     else
                         id.mnc.takeIf { it != intMax }?.toString()
                     ) ?: alternativeMnc ?: continue
@@ -385,7 +385,7 @@ class BackendService : LocationBackendService() {
                         id.mcc.takeIf { it != intMax }?.toString() ?: continue
                 val mncString: String = (
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-                            id.mncString.substringAfter("0")
+                            id.mncString?.substringAfter("0")
                     else
                             id.mnc.takeIf { it != intMax }?.toString()
                     ) ?: alternativeMnc ?: continue
@@ -411,7 +411,7 @@ class BackendService : LocationBackendService() {
                         id.mcc.takeIf { it != intMax }?.toString() ?: continue
                 val mncString: String = (
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-                        id.mncString.substringAfter("0")
+                        id.mncString?.substringAfter("0")
                     else
                         id.mnc.takeIf { it != intMax }?.toString()
                     ) ?: alternativeMnc ?: continue
