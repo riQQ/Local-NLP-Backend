@@ -389,7 +389,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
         // split lc into continuous occurrences of a-z
         // most 'contains' checks only make sense if the string is a separate word
         // this accelerates comparison a lot, at the risk of missing some wifis
-        val lcSplit = lc.split(splitRegex)
+        val lcSplit = lc.split(splitRegex).toSet()
 
         // Seen a large number of WiFi networks where the SSID is the last
         // three octets of the MAC address. Often in rural areas where the
