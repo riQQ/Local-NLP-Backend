@@ -40,7 +40,8 @@ data class BoundingBox(
         private set
     var west = 181.0 // Impossibly east
         private set
-    val radius get() = sqrt(radius_ns * radius_ns + radius_ew * radius_ew)
+    var radius = sqrt(radius_ns * radius_ns + radius_ew * radius_ew)
+        private set
 
     constructor(loc: Location) : this() {
         update(loc)
@@ -106,6 +107,7 @@ data class BoundingBox(
         radius_ns = ((north - center_lat) * BackendService.DEG_TO_METER)
         cosLat = cos(Math.toRadians(center_lat)).coerceAtLeast(BackendService.MIN_COS)
         radius_ew = (east - center_lon) * BackendService.DEG_TO_METER * cosLat
+        radius = sqrt(radius_ns * radius_ns + radius_ew * radius_ew)
         return true
     }
 
@@ -139,6 +141,7 @@ data class BoundingBox(
             val cosLat = cos(Math.toRadians(center_lat)).coerceAtLeast(BackendService.MIN_COS)
             radius_ew =
                 ((east - center_lon) * BackendService.DEG_TO_METER / cosLat)
+            radius = sqrt(radius_ns * radius_ns + radius_ew * radius_ew)
         }
         return rslt
     }
