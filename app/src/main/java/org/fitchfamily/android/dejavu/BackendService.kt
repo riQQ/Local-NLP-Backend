@@ -60,6 +60,7 @@ class BackendService : LocationBackendService() {
     private val scope = CoroutineScope(Job() + Dispatchers.Default)
     private var mobileJob = scope.launch { }
     private var backgroundJob: Job = scope.launch { }
+    private var periodicProcessing: Job = scope.launch {  }
 
     //
     // Periodic process information.
@@ -72,7 +73,6 @@ class BackendService : LocationBackendService() {
     private var emitterCache: Cache? = null
     private var nextMobileScanTime: Long = 0
     private var nextWlanScanTime: Long = 0
-    private var nextReportTime: Long = 0
     private var oldLocationUpdate = 0L // store last update of the previous period to allow checking whether gpsLocation has changed
     private var oldScanResults = listOf<ScanResult>() // results of previous wifi scan
 
@@ -101,7 +101,6 @@ class BackendService : LocationBackendService() {
         Log.d(TAG, "onOpen() entry.")
         super.onOpen()
         instance = this
-        nextReportTime = 0
         nextMobileScanTime = 0
         nextWlanScanTime = 0
         wifiBroadcastReceiverRegistered = false
@@ -222,8 +221,30 @@ class BackendService : LocationBackendService() {
             }
 
             if (DEBUG) Log.d(TAG, "scanAllSensors() - starting scans")
+            if (!periodicProcessing.isActive)
+                startProcessingPeriod()
             startWiFiScan()
             startMobileScan()
+        }
+    }
+
+    // wait until
+    private fun startProcessingPeriod() {
+        scope.launch(Dispatchers.IO) { // IO because there is a lot of wait and db access
+            delay(REPORTING_INTERVAL)
+            // delay a bit more if wifi scan is still running
+            if (wifiScanInProgress) {
+                Log.d(TAG, "backgroundProcessing() - Delaying endOfPeriodProcessing because WiFi scan in progress")
+                val waitUntil = nextWlanScanTime // delay at max until wifi scan should be finished
+                while (SystemClock.elapsedRealtime() < waitUntil) {
+                    delay(50)
+                    if (!wifiScanInProgress) break
+                }
+            }
+            // delay even somewhat more if there are still observations being processed
+            if (backgroundJob.isActive)
+                delay(50) // todo: check how long completing the work usually takes
+            endOfPeriodProcessing()
         }
     }
 
@@ -268,7 +289,7 @@ class BackendService : LocationBackendService() {
         }
         nextMobileScanTime = currentProcessTime + MOBILE_SCAN_INTERVAL
 
-        // Scanning towers takes some time, so do it in a coroutine
+        // Scanning towers may take some time (does it really?), so do it in background
         if (!airplaneMode) {
             if (DEBUG) Log.d(TAG,"startMobileScan() - Starting mobile signal scan.")
             mobileJob = scope.launch { scanMobile() }
@@ -603,26 +624,9 @@ class BackendService : LocationBackendService() {
         // the emitters are known to be seen at.
         updateEmitters(emitters, myWork.loc/*, myWork.time*/)
 
-        // Check for the end of our collection period. If we are in a new period
-        // then finish off the processing for the previous period.
-        val currentProcessTime = SystemClock.elapsedRealtime()
-
-        // if a wifi scan is running, wait a bit longer to allow finishing
-        // this helps a lot if a scan is started after end of processing period
-        //  then the results from mobile scan are usually available before wifi scan, and thus
-        //  either a pure mobile location is reported, or a wifi location with old wifis
-        val delayUntil = if (wifiScanInProgress)
-                nextWlanScanTime.coerceAtLeast(nextReportTime)
-            else
-                nextReportTime
-
-        if (currentProcessTime >= delayUntil) {
-            nextReportTime = currentProcessTime + REPORTING_INTERVAL
-            mobileJob.cancel() // stop the mobile scan if it's still happening
-            endOfPeriodProcessing()
-        } else if (DEBUG && currentProcessTime > nextReportTime)
-            // todo: if we do it like this, end of period might come very late...
-            Log.d(TAG, "backgroundProcessing() - Delaying endOfPeriodProcessing because WiFi scan in progress")
+        // start new period if necessary
+        if (!periodicProcessing.isActive)
+            startProcessingPeriod()
     }
 
     /**
@@ -778,19 +782,15 @@ class BackendService : LocationBackendService() {
      * or four seconds. Another reason is that we can average more samples into each
      * report so there is a chance that our position computation is more accurate.
      */
+    @Synchronized
     private fun endOfPeriodProcessing() {
         if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - Starting new process period.")
-        // TODO: delay if work queue is not empty?
-        // the whole thing may be organized differently, like...
-        //  start it immediately when starting scans (if not running)
-        //  put a delay here (suspend fun)
-        //  and then, if wifi scan running or queue not empty, wait a bit longer
-        //  or... there are mor possibilities with jobs and waiting...
 
         // Estimate location using weighted average of the most recent
         // observations from the set of RF emitters we have seen. We cull
         // the locations based on distance from each other to reduce the
         // chance that a moved/moving emitter will be used in the computation.
+        // todo: check how fast this processing stuff is, maybe optimize if necessary
         val locations: Collection<Location>? = culledEmitters(getRfLocations(seenSet))
         val weightedAverageLocation = computePosition(locations)
         if (weightedAverageLocation != null && notNullIsland(weightedAverageLocation)) {
