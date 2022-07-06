@@ -69,6 +69,7 @@ class Database(context: Context?) :
         if (oldVersion < 2) upGradeToVersion2(db)
         if (oldVersion < 3) upGradeToVersion3(db)
         if (oldVersion < 4) upGradeToVersion4(db)
+        if (oldVersion < 5) upGradeToVersion5(db)
     }
 
     private fun upGradeToVersion2(db: SQLiteDatabase) {
@@ -184,7 +185,7 @@ class Database(context: Context?) :
 
     private fun upGradeToVersion4(db: SQLiteDatabase) {
         // another upgrade
-        // type column is now ordinal of EmitterType (idea: save space, allow for range queries)
+        // type column is now ordinal of EmitterType (idea: save space, allow for range queries) // todo: better not!
         // remove hash column
         //  mobile emitter IDs are already unique
         //  wifi emitters get wifi type prepended
@@ -233,6 +234,59 @@ class Database(context: Context?) :
         db.execSQL("DROP TABLE $TABLE_SAMPLES;")
         db.execSQL("ALTER TABLE ${TABLE_SAMPLES}_new RENAME TO $TABLE_SAMPLES;")
         db.execSQL("CREATE INDEX $SPATIAL_INDEX_SAMPLES ON $TABLE_SAMPLES ($COL_LAT,$COL_LON,$COL_TYPE);")
+        db.execSQL("COMMIT;")
+    }
+
+    private fun upGradeToVersion5(db: SQLiteDatabase) {
+        // another upgrade
+        // remove trust column
+        // change type back to text
+        // set emitters with impossibly large radius to -1, or int max, or null or sth...
+        //  actually this is done in RfEmitter, so it's not needed
+        // consider changing radius to cm or mm, as this is precise enough and is smaller/faster
+        // todo: the things above
+        db.execSQL("BEGIN TRANSACTION;")
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS ${TABLE_SAMPLES}_new (
+            $COL_RFID TEXT PRIMARY KEY NOT NULL,
+            $COL_TYPE TEXT NOT NULL,
+            $COL_LAT REAL NOT NULL,
+            $COL_LON REAL NOT NULL,
+            $COL_RAD_NS REAL NOT NULL,
+            $COL_RAD_EW REAL NOT NULL,
+            $COL_NOTE TEXT
+            );
+        """.trimIndent()
+        )
+        db.execSQL("DROP INDEX IF EXISTS $SPATIAL_INDEX_SAMPLES;")
+        // add 2.4 GHz WiFis
+        db.execSQL("""
+            INSERT INTO ${TABLE_SAMPLES}_new($COL_RFID, $COL_TYPE, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE)
+            SELECT '${EmitterType.WLAN2}/' || $COL_RFID, ${EmitterType.WLAN2.ordinal}, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
+            FROM $TABLE_SAMPLES
+            WHERE $COL_TYPE = 'WLAN_24GHZ';
+        """.trimIndent()
+        )
+        // add 5 GHz WiFis
+        db.execSQL("""
+            INSERT INTO ${TABLE_SAMPLES}_new($COL_RFID, $COL_TYPE, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE)
+            SELECT '${EmitterType.WLAN5}/' || $COL_RFID, ${EmitterType.WLAN5.ordinal}, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
+            FROM $TABLE_SAMPLES
+            WHERE $COL_TYPE = 'WLAN_5GHZ';
+        """.trimIndent()
+        )
+        // cell towers are already unique, but we need to split the types, as they may hav different characteristics
+        for (emitterType in arrayOf(EmitterType.GSM, EmitterType.WCDMA, EmitterType.CDMA, EmitterType.LTE)) {
+            db.execSQL("""
+            INSERT INTO ${TABLE_SAMPLES}_new($COL_RFID, $COL_TYPE, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE)
+            SELECT $COL_RFID, ${emitterType.ordinal}, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
+            FROM $TABLE_SAMPLES
+            WHERE $COL_TYPE = 'MOBILE' AND $COL_RFID LIKE '${emitterType}%';
+        """.trimIndent()
+            )
+        }
+        db.execSQL("DROP TABLE $TABLE_SAMPLES;")
+        db.execSQL("ALTER TABLE ${TABLE_SAMPLES}_new RENAME TO $TABLE_SAMPLES;")
         db.execSQL("COMMIT;")
     }
 
@@ -510,7 +564,7 @@ class Database(context: Context?) :
     companion object {
         private const val TAG = "DejaVu DB"
         private val DEBUG = BuildConfig.DEBUG
-        private const val VERSION = 4
+        private const val VERSION = 5
         private const val NAME = "rf.db"
         private const val TABLE_SAMPLES = "emitters"
         private const val SPATIAL_INDEX_SAMPLES = "emitters_index"
@@ -528,7 +582,6 @@ class Database(context: Context?) :
 }
 
 class EmitterInfo(
-    val trust: Int = 0,
     val latitude: Double = 0.0,
     val longitude: Double = 0.0,
     val radius_ns: Float = 0f,

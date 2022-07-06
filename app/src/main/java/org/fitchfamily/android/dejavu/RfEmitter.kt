@@ -30,8 +30,7 @@ import org.fitchfamily.android.dejavu.EmitterType.*
  */
 /**
  * Models everything we know about an RF emitter: Its identification, most recently received
- * signal level, an estimate of its coverage (center point and radius), how much we trust
- * the emitter (can we use information about it to compute a position), etc.
+ * signal level, an estimate of its coverage (center point and radius), etc.
  *
  * Starting with v2 of the database, we store a north-south radius and an east-west radius which
  * allows for a rectangular bounding box rather than a square one.
@@ -41,10 +40,6 @@ import org.fitchfamily.android.dejavu.EmitterType.*
  *
  * Periodically we sync our current information about the emitter back to the flash memory
  * based storage.
- *
- * Trust is incremented everytime we see the emitter and the new observation has data compatible
- * with our current model. We decrease (or set to zero) our trust if it we think we should have
- * seen the emitter at our current location or if it looks like the emitter may have moved.
  */
 class RfEmitter(val type: EmitterType, val id: String) {
     internal constructor(identification: RfIdentification) : this(identification.rfType, identification.rfId)
@@ -56,15 +51,16 @@ class RfEmitter(val type: EmitterType, val id: String) {
     internal constructor(identification: RfIdentification, emitterInfo: EmitterInfo) : this(identification.rfType, identification.rfId, emitterInfo)
 
     internal constructor(type: EmitterType, id: String, emitterInfo: EmitterInfo) : this(type, id) {
+        if (emitterInfo.radius_ew < 0) {
+            coverage = null
+            status = EmitterStatus.STATUS_BLACKLISTED
+        }
         coverage = BoundingBox(emitterInfo)
-        trust = emitterInfo.trust
         status = EmitterStatus.STATUS_CACHED
         note = emitterInfo.note
     }
 
     private val ourCharacteristics = type.getRfCharacteristics()
-    var trust: Int = ourCharacteristics.discoveryTrust
-        private set
     var coverage: BoundingBox? = null
         private set
     var note: String? = "" // TODO: setting note currently triggers blacklist check, but this is not necessary when loading emitter from db!
@@ -72,7 +68,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
             if (field == value)
                 return
             field = value
-            if (blacklistEmitter())
+            if (isBlacklisted())
                 changeStatus(EmitterStatus.STATUS_BLACKLISTED, "emitter blacklisted")
         }
     var lastObservation: Observation? = null
@@ -88,7 +84,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
     val rfIdentification: RfIdentification get() = RfIdentification(id, type)
     val lat: Double get() = coverage?.center_lat ?: 0.0
     val lon: Double get() = coverage?.center_lon ?: 0.0
-    val radius: Double get() = coverage?.radius ?: 0.0
+    private val radius: Double get() = coverage?.radius ?: 0.0
     val radiusNS: Double get() = coverage?.radius_ns ?: 0.0
     val radiusEW: Double get() = coverage?.radius_ew ?: 0.0
 
@@ -113,6 +109,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is RfIdentification) return false
+        // todo: is this really ok? or should it rather be sth like other.rfIdentification?
+        //  also: does it happen that on wifi AP has 2 SSID, but one BSSID/MAC? then rfId is not unique for emitter!
         return rfIdentification == other
     }
 
@@ -159,7 +157,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
     /**
      * Synchronize this object to the flash based database. This method is called
      * by the cache when it is an appropriate time to assure the flash based
-     * database is up to date with our current coverage, trust, etc.
+     * database is up to date with our current coverage, etc.
      *
      * @param db The database we should write our data to.
      */
@@ -169,9 +167,13 @@ class RfEmitter(val type: EmitterType, val id: String) {
             EmitterStatus.STATUS_UNKNOWN -> { }
             EmitterStatus.STATUS_BLACKLISTED ->
                 // If our coverage value is not null it implies that we exist in the
-                // database. If so we ought to remove the entry.
+                // database as "normal" emitter. If so we ought to either remove the entry (for
+                // blacklisted SSIDs) or set invalid radius (for too large coverage).
                 if (coverage != null) {
-                    db.drop(this)
+                    if (isBlacklisted())
+                        db.drop(this)
+                    else
+                        db.setInvalid(this) // todo: add to Database.kt
                     coverage = null
                     if (DEBUG) Log.d(TAG, "sync('$logString') - Blacklisted dropping from database.")
                 }
@@ -182,11 +184,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
             }
             EmitterStatus.STATUS_CHANGED -> {
                 // In database but we have changes
-                if (trust < MINIMUM_TRUST) {
-                    if (DEBUG) Log.d(TAG, "sync('$logString') - Trust below minimum, dropping from database.")
-                    db.drop(this)
-                } else
-                    db.update(this)
+                db.update(this)
                 newStatus = EmitterStatus.STATUS_CACHED
             }
             EmitterStatus.STATUS_CACHED -> { }
@@ -195,38 +193,6 @@ class RfEmitter(val type: EmitterType, val id: String) {
     }
 
     val logString get() = if (DEBUG) "RF Emitter: Type=$type, ID='$id', Note='$note'" else ""
-
-    /**
-     * Unfortunately some types of RF emitters are very mobile and a mobile emitter
-     * should not be used to estimate our position. Part of the way to deal with this
-     * issue is to maintain a trust metric. Trust has a maximum value, so when we
-     * are asked to increment trust we need to check that we have not passed the limit.
-     */
-    fun incrementTrust() {
-        if (canUpdate()) {
-            val newTrust = (trust + ourCharacteristics.increaseTrust).coerceAtMost(MAXIMUM_TRUST)
-            if (newTrust != trust) {
-                if (DEBUG) Log.d(TAG, "incrementTrust('$logString') - trust change: $trust -> $newTrust")
-                trust = newTrust
-                changeStatus(EmitterStatus.STATUS_CHANGED, "incrementTrust('$logString')")
-            }
-        }
-    }
-
-    /**
-     * Decrease our trust of this emitter. This can happen because we expected to see it at our
-     * current location and didn't.
-     */
-    fun decrementTrust() {
-        if (canUpdate()) {
-            if (ourCharacteristics.decreaseTrust != 0) {
-                if (DEBUG) Log.d(TAG, "decrementTrust('$logString') - trust change: $trust" +
-                        " -> " + (trust - ourCharacteristics.decreaseTrust))
-                trust -= ourCharacteristics.decreaseTrust
-                changeStatus(EmitterStatus.STATUS_CHANGED, "decrementTrust('$logString')")
-            }
-        }
-    }
 
     /**
      * When a scan first detects an emitter a RfEmitter object is created. But at that time
@@ -240,7 +206,6 @@ class RfEmitter(val type: EmitterType, val id: String) {
         if (emitterInfo != null) {
             if (coverage == null)
                 coverage = BoundingBox(emitterInfo)
-            trust = emitterInfo.trust
             note = emitterInfo.note
             changeStatus(EmitterStatus.STATUS_CACHED, "updateInfo('$logString')")
         }
@@ -254,26 +219,27 @@ class RfEmitter(val type: EmitterType, val id: String) {
      */
     fun updateLocation(gpsLoc: Location?) {
         if (status == EmitterStatus.STATUS_BLACKLISTED) return
-        // problem: if we have a non-blacklisted but mobile emitter, we can never update if
-        //  we don't get good accuracy. e.g. wifi on a train, we detected it outside at the station
-        //  but cannot increase radius from inside the train, because accuracy is bad
-        //  so dejavu will report our location at the train station, even if we are far away and
-        //  have a (not sufficiently accurate) gps location
-        // attempted solution: if gps location is far away from the emitter, we still update the emitter
-        //  this is purely for cases where in the end the bbox is large enough to have the
-        //  emitter ignored for future location reports
-        //   (maybe better to add some emitterstatus ignored from now on?)
-        if (gpsLoc == null
+        val cov = coverage // avoid potential weird issues with null value
+
+        // don't update coverage if:
+        if (
+            // no gps location
+            gpsLoc == null
+            // or gps too accurate
             || (gpsLoc.accuracy > ourCharacteristics.requiredGpsAccuracy
-                    && (coverage == null
-                        || distance(gpsLoc, coverage!!.center_lat, coverage!!.center_lon)
-                            < (type.getRfCharacteristics().moveDetectDistance + gpsLoc.accuracy) * 2
+                    // and either new emitter
+                    && (cov == null
+                    // or distance close enough to believe we might still be in range
+                    //   this restriction allows updating emitters that are found unbelievably far
+                    //   from their known location, so they will be blacklisted
+                        || distance(gpsLoc, cov.center_lat, cov.center_lon)
+                            < (type.getRfCharacteristics().maximumRange + gpsLoc.accuracy) * 2
                        )
             )) {
             if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location inaccurate.")
             return
         }
-        if (coverage == null) {
+        if (cov == null) {
             if (DEBUG) Log.d(TAG, "updateLocation($logString) - Emitter is new.")
             coverage = BoundingBox(gpsLoc.latitude, gpsLoc.longitude, 0.0f)
             changeStatus(EmitterStatus.STATUS_NEW, "updateLocation('$logString') New")
@@ -281,26 +247,12 @@ class RfEmitter(val type: EmitterType, val id: String) {
         }
 
         // Add the GPS sample to the known bounding box of the emitter.
-        if (coverage!!.update(gpsLoc.latitude, gpsLoc.longitude)) {
+        if (cov.update(gpsLoc.latitude, gpsLoc.longitude)) {
             // Bounding box has increased, see if it is now unbelievably large
-/*            if (coverage.getRadius() >= ourCharacteristics.moveDetectDistance) {
-                Log.d(TAG, "updateLocation("+id+") emitter has moved (" + gpsLoc.distanceTo(_getLocation()) + ")");
-                coverage = new BoundingBox(gpsLoc.getLatitude(), gpsLoc.getLongitude(), 0.0f);
-                trust = ourCharacteristics.discoveryTrust;
-                changeStatus(EmitterStatus.STATUS_CHANGED, "updateLocation('"+logString()+"') Moved");
-            } else {
-                changeStatus(EmitterStatus.STATUS_CHANGED, "updateLocation('" + logString() + "') BBOX update");
-            }
-*/
-            // this is not working well, mobile emitters move every now and then,
-            //  but provide bad positions in between
-            // simply update bbox and treat large bounding boxes like blacklisted
-            //  but don't set emitter status to blacklisted, or the emitter will be dropped and
-            //  soon added again to DB
-            // maybe introduce some status_ignored, if bbox is too large
-            //  effectively it should be similar to blacklisted, but not cause he emitter
-            //  to be dropped from db, but to remain in db unchanged forever (not great, but how to do it better?)
-            changeStatus(EmitterStatus.STATUS_CHANGED, "updateLocation('$logString') BBOX update")
+            if (cov.radius > ourCharacteristics.maximumRange)
+                changeStatus(EmitterStatus.STATUS_BLACKLISTED, "updateLocation('$logString') too large radius")
+            else
+                changeStatus(EmitterStatus.STATUS_CHANGED, "updateLocation('$logString') BBOX update")
         }
     }
 
@@ -317,9 +269,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
             // position estimate based on it.
             val observation = lastObservation ?: return null
 
-            // If we don't trust the location, we ought not give a position
-            // estimate based on it.
-            if (trust < REQUIRED_TRUST || status == EmitterStatus.STATUS_BLACKLISTED || radius > ourCharacteristics.moveDetectDistance)
+            if (status == EmitterStatus.STATUS_BLACKLISTED)
                 return null
 
             // If we don't have a coverage estimate we will get back a null location
@@ -354,8 +304,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
         location.longitude = cov.center_lon
 
         // Hard limit the minimum accuracy based on the type of emitter
-        location.accuracy = radius.coerceAtLeast(ourCharacteristics.minimumRange.toDouble())
-            .toFloat()
+        location.accuracy = radius.toFloat().coerceAtLeast(ourCharacteristics.minimumRange)
         return location
     }
 
@@ -365,12 +314,12 @@ class RfEmitter(val type: EmitterType, val id: String) {
      *
      * @return True if the emitter is blacklisted (should not be used in position computations).
      */
-    private fun blacklistEmitter(): Boolean =
+    private fun isBlacklisted(): Boolean =
         if (note.isNullOrEmpty())
             false
         else
              when (type) {
-                 WLAN2, WLAN5, WLAN6 -> blacklistWifi()
+                 WLAN2, WLAN5, WLAN6 -> ssidBlacklisted()
                  BT -> false // if ever added, there should be a BT blacklist too
                  else -> false // Not expecting mobile towers to move around.
             }
@@ -383,7 +332,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
      *
      * @return True if emitter should be blacklisted.
      */
-    private fun blacklistWifi(): Boolean {
+    private fun ssidBlacklisted(): Boolean {
         val lc = note?.lowercase() ?: return false
 
         // split lc into continuous occurrences of a-z
@@ -399,17 +348,17 @@ class RfEmitter(val type: EmitterType, val id: String) {
             id.substring(id.length - 8).lowercase().replace(":", "")
 
         val blacklisted =
-            lcSplit.any { blacklistWords.contains(it) } // probably better than other way round, because fewer checks
-                || blacklistEquals.contains(lc)
+            lcSplit.any { blacklistWords.contains(it) }
                 || blacklistStartsWith.any { lc.startsWith(it) }
                 || blacklistEndsWith.any { lc.endsWith(it) }
-                //|| blacklistContains.any { lc.contains(it) } // don't use this! better split it up
+                || blacklistEquals.contains(lc)
                 // a few less simple checks
                 || note?.startsWith("MOTO") == true        // "MOTO9564" and "MOTO9916" seen
                 || lcSplit.first() == "audi" // some cars seem to have this AP on-board
                 || lc == macSuffix // Apparent default SSID name for many cars
-                || (lcSplit.contains("admin") && lc.contains("admin@ms")) // simple contains should be avoided
-                || (lcSplit.contains("guest") && lc.contains("guest@ms")) // so only do it if words admin or guest found
+                // deal with words not achievable with blacklistWords
+                || (lcSplit.contains("admin") && lc.contains("admin@ms"))
+                || (lcSplit.contains("guest") && lc.contains("guest@ms"))
                 || (lcSplit.contains("contiki") && lc.contains("contiki-wifi")) // transport
                 || (lcSplit.contains("interakti") && lc.contains("nsb_interakti")) // ???
                 || (lcSplit.contains("nvram") && lc.contains("nvram warning")) // transport
@@ -425,11 +374,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
      *
      * @return True if coverage and/or trust can be updated.
      */
-    private fun canUpdate(): Boolean =
-        when (status) {
-            EmitterStatus.STATUS_BLACKLISTED, EmitterStatus.STATUS_UNKNOWN -> false
-            else -> true
-        }
+    private fun canUpdate() =
+        status != EmitterStatus.STATUS_BLACKLISTED && status != EmitterStatus.STATUS_UNKNOWN
 
 
     /**
@@ -473,9 +419,6 @@ class RfEmitter(val type: EmitterType, val id: String) {
         private const val TAG = "DejaVu RfEmitter"
         private const val METERS: Long = 1
         private const val KM = METERS * 1000
-        private const val MINIMUM_TRUST = 0
-        private const val REQUIRED_TRUST = 48
-        private const val MAXIMUM_TRUST = 100
 
         // Tag/names for additional information on location records
         const val LOC_RF_ID = "rfid"
@@ -484,7 +427,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
         const val LOC_MIN_COUNT = "minCount"
 
         private val splitRegex = "[^a-z]".toRegex() // for splitting SSID into "words"
-        private val blacklistWords = setOf(
+        // use hashSets for fast blacklist*.contains() check
+        private val blacklistWords = hashSetOf(
             "android", "androidap", "ipad", "phone", "motorola", "huawei", // mobile tethering
             "mobile", // sounds like name for mobile hotspot
             "deinbus", "ecolines", "eurolines", "fernbus", "flixbus", "muenchenlinie",
@@ -498,7 +442,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
             "silverado", // GMC Silverado. "Bryces Silverado" seen, maybe move to startsWith?
             "myvolvo", // Volvo in car WiFi, maybe move to startsWith?
         )
-        private val blacklistStartsWith = setOf(
+        private val blacklistStartsWith = hashSetOf(
             "moto ", "samsung galaxy", "lg aristo", // mobile tethering
             "cellspot", // T-Mobile US portable cell based WiFi
             "verizon", // Verizon mobile hotspot
@@ -515,7 +459,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
             "taxilinq", "transitwirelesswifi", // transport, maybe move some to words?
             "yicarcam", // Dashcam WiFi.
         )
-        private val blacklistEndsWith = setOf(
+        private val blacklistEndsWith = hashSetOf(
             "corvette", // Chevy Corvette. "TS Corvette" seen.
 
             // General Motors built vehicles SSID can be changed but the recommended SSID to
@@ -526,7 +470,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
             "sierra", // GMC pickup. "dees sierra" seen
             "gmc wifi", // General Motors
         )
-        private val blacklistEquals = setOf(
+        private val blacklistEquals = hashSetOf(
             "amtrak", "amtrakconnect", "cdwifi", "megabus", "westlan","wifi in de trein",
             "svciob", "oebb", "oebb-postbus", "dpmbfree", "telekom_ice", "db ic bus", // transport
         )
@@ -554,65 +498,45 @@ class RfEmitter(val type: EmitterType, val id: String) {
             // so base the move distance on that.
             RfCharacteristics(
                 20F * METERS,
-                30F * METERS,
                 50F * METERS,
                 300F * METERS,  // Seen pretty long detection in very rural areas
-                1,
-                REQUIRED_TRUST / 3,
-                1,
                 2
             )
         private val characteristicsWlan5 =
             RfCharacteristics(
                 13F * METERS,
-                20F * METERS,
                 30F * METERS,
                 100F * METERS,  // Seen pretty long detection in very rural areas
-                1,
-                REQUIRED_TRUST / 3,
-                1,
                 2
             )
         private val characteristicsBluetooth =
             RfCharacteristics(
                 5F * METERS,
                 2F * METERS,
-                10F * METERS,
                 150F * METERS, // class 1 devices can have 100 m range
-                0,
-                REQUIRED_TRUST / 3,
-                1,
                 2
             )
         private val characteristicsMobile =
             RfCharacteristics(
                 100F * METERS,
                 500F * METERS,
-                2F * KM,
                 100F * KM,  // In the desert towers cover large areas
-                MAXIMUM_TRUST,
-                MAXIMUM_TRUST,
-                0,
                 1
             )
         private val characteristicsUnknown =
             // Unknown emitter type, just throw out some values that make it unlikely that
-            // we will ever use it (require too accurate a GPS location, never increment trust, etc.).
+            // we will ever use it (require too accurate a GPS location, etc.).
             RfCharacteristics(
                 2F * METERS,
                 50F * METERS,
-                50F * METERS,
                 100F * METERS,
-                0,
-                0,
-                1,
                 99
             )
     }
 }
 
 // emitter type is stored as ordinal in database
-// so NEVER change the order!
+// so NEVER change the order! // todo: NO! this is a bad idea
 // when adding new types,do it below the last one
 enum class EmitterType {
     INVALID,
@@ -639,10 +563,6 @@ enum class EmitterStatus {
 class RfCharacteristics (
     val requiredGpsAccuracy: Float,
     val minimumRange: Float,
-    val typicalRange: Float,        // used in getExpected: if we are at a location, emitters in typicalRange around our location are fetched from db, and trust is decreased if they are not found
-    val moveDetectDistance: Float,  // Maximum believable coverage radius in meters
-    val discoveryTrust: Int,        // Assumed trustiness of a rust an emitter seen for the first time.
-    val increaseTrust: Int,
-    val decreaseTrust: Int,
+    val maximumRange: Float,        // Maximum believable coverage radius in meters
     val minCount: Int               // Minimum number of emitters before we can estimate location
 )

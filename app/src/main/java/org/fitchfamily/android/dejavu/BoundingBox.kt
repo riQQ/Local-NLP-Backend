@@ -115,6 +115,7 @@ data class BoundingBox(
      * Update the bounding box to include a point at the specified lat/lon
      * @param lat The latitude to be included in the bounding box
      * @param lon The longitude to be included in the bounding box
+     * @return whether coverage has changed
      */
     fun update(lat: Double, lon: Double): Boolean {
         var rslt = false
