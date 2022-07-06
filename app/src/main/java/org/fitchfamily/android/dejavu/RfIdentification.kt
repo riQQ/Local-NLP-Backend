@@ -19,11 +19,6 @@ package org.fitchfamily.android.dejavu
 *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import android.util.Log
-import java.lang.Exception
-import java.math.BigInteger
-import java.security.MessageDigest
-
 /**
  * Created by tfitch on 10/4/17.
  */
@@ -31,7 +26,7 @@ import java.security.MessageDigest
  * This class forms a complete identification for a RF emitter.
  *
  * All it has are two fields: A rfID string that must be unique within a type
- * or class of emitters. And a rtType value that indicates the type of RF
+ * or class of emitters. And a rfType value that indicates the type of RF
  * emitter we are dealing with.
  */
 data class RfIdentification(

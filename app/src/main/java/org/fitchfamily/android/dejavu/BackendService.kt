@@ -38,7 +38,7 @@ import org.microg.nlp.api.LocationBackendService
 import org.microg.nlp.api.MPermissionHelperActivity
 import java.util.*
 import java.util.concurrent.ConcurrentLinkedQueue
-import kotlin.math.*
+import kotlin.collections.ArrayList
 
 /**
  * Created by tfitch on 8/27/17.
@@ -53,18 +53,13 @@ class BackendService : LocationBackendService() {
     private val wifiManager: WifiManager by lazy { applicationContext.getSystemService(WIFI_SERVICE) as WifiManager }
     private val wifiBroadcastReceiver: BroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            wifiScope.launch { onWiFisChanged() }
+            scope.launch { onWiFisChanged() }
         }
     }
     private var gpsLocation: Kalman? = null // Filtered GPS (because GPS is so bad on Moto G4 Play)
-    // TODO: do we really need different scopes and jobs here?
-    //  probably 1 scope is enough
-    //  is there some way to have one job and start it again, instead of creating a new one on every mobile scan?
-    private val mobileScanScope = CoroutineScope(Job() + Dispatchers.Default) // scope for scanning mobile towers, to be cancelled at end of period
-    private var mobileJob = mobileScanScope.launch { }
-    private val backgroundScope = CoroutineScope(Job() + Dispatchers.Default) // scope for background processing
-    private var backgroundJob: Job = backgroundScope.launch { }
-    private val wifiScope = CoroutineScope(Job() + Dispatchers.Default) // processing wifi results and doing
+    private val scope = CoroutineScope(Job() + Dispatchers.Default)
+    private var mobileJob = scope.launch { }
+    private var backgroundJob: Job = scope.launch { }
 
     //
     // Periodic process information.
@@ -245,7 +240,7 @@ class BackendService : LocationBackendService() {
             if (DEBUG) Log.d(TAG, "startWiFiScan() - need to wait before starting next scan")
             return
         }
-        // in case wifi scan doesn't return anything we simply allow starting another one
+        // in case wifi scan doesn't return anything for a long time we simply allow starting another one
         if (!wifiScanInProgress || currentProcessTime > nextWlanScanTime + 3 * WLAN_SCAN_INTERVAL) {
             nextWlanScanTime = currentProcessTime + WLAN_SCAN_INTERVAL
             if (canScanWifi) {
@@ -276,7 +271,7 @@ class BackendService : LocationBackendService() {
         // Scanning towers takes some time, so do it in a coroutine
         if (!airplaneMode) {
             if (DEBUG) Log.d(TAG,"startMobileScan() - Starting mobile signal scan.")
-            mobileJob = mobileScanScope.launch { scanMobile() }
+            mobileJob = scope.launch { scanMobile() }
         } else if (DEBUG) Log.d(TAG,"startMobileScan() - Airplane mode is enabled.")
     }
 
@@ -562,7 +557,7 @@ class BackendService : LocationBackendService() {
         if (backgroundJob.isActive)
             return
         if (DEBUG) Log.d(TAG,"queueForProcessing() - Starting new background job")
-        backgroundJob = backgroundScope.launch {
+        backgroundJob = scope.launch {
             var myWork = workQueue.poll()
             while (myWork != null) {
                 backgroundProcessing(myWork)
@@ -589,7 +584,7 @@ class BackendService : LocationBackendService() {
     @Synchronized
     private fun backgroundProcessing(myWork: WorkItem) {
         if (emitterCache == null) return
-        val emitters: MutableCollection<RfEmitter> = HashSet()
+        val emitters = HashSet<RfEmitter>()
 
         // load all emitters into the cache to avoid several single database transactions
         emitterCache!!.loadIds(myWork.observations.map { it.identification })
@@ -626,6 +621,7 @@ class BackendService : LocationBackendService() {
             mobileJob.cancel() // stop the mobile scan if it's still happening
             endOfPeriodProcessing()
         } else if (DEBUG && currentProcessTime > nextReportTime)
+            // todo: if we do it like this, end of period might come very late...
             Log.d(TAG, "backgroundProcessing() - Delaying endOfPeriodProcessing because WiFi scan in progress")
     }
 
@@ -704,8 +700,9 @@ class BackendService : LocationBackendService() {
      * the most believable set of coverage areas.
      */
     private fun culledEmitters(locations: Collection<Location>): Set<Location>? {
+        // since we're only interested in the first entry, things could be simplified
         val locationGroups = divideInGroups(locations)
-        val clsList: List<MutableSet<Location>> = ArrayList(locationGroups).sortedByDescending { it.size }
+        val clsList = locationGroups.sortedByDescending { it.size }
         if (clsList.isNotEmpty()) {
             val result: Set<Location> = clsList[0]
 
@@ -723,21 +720,22 @@ class BackendService : LocationBackendService() {
     }
 
     /**
-     * Build a set of sets (or groups) each outer set member is a set of coverage of
+     * Build a list of sets (or groups) each outer set member is a set of coverage of
      * reasonably near RF emitters. Basically we are grouping the raw observations
      * into clumps based on how believably close together they are. An outlying emitter
      * will likely be put into its own group. Our caller will take the largest set as
      * the most believable group of observations to use to compute a position.
      *
      * @param locations A set of RF emitter coverage records
-     * @return A set of coverage sets.
+     * @return A list of coverage sets.
      */
-    private fun divideInGroups(locations: Collection<Location>): Set<MutableSet<Location>> {
-        val bins: MutableSet<MutableSet<Location>> = HashSet()
+    // todo: looks like it might be slow, depending on number of locations -> test and maybe optimize
+    private fun divideInGroups(locations: Collection<Location>): List<MutableSet<Location>> {
+        val bins = ArrayList<MutableSet<Location>>(locations.size)
 
-        // Create a bins
+        // Create bins
         for (location in locations) {
-            val locGroup: MutableSet<Location> = HashSet()
+            val locGroup = HashSet<Location>()
             locGroup.add(location)
             bins.add(locGroup)
         }
@@ -788,10 +786,6 @@ class BackendService : LocationBackendService() {
         //  put a delay here (suspend fun)
         //  and then, if wifi scan running or queue not empty, wait a bit longer
         //  or... there are mor possibilities with jobs and waiting...
-
-        // load all emitters into the cache to avoid several single database transactions
-        // not necessary, actually this is done be getRfLocations, which loads the seenSet
-        //emitterCache!!.loadIds(seenSet)
 
         // Estimate location using weighted average of the most recent
         // observations from the set of RF emitters we have seen. We cull
@@ -864,7 +858,7 @@ class BackendService : LocationBackendService() {
         // values are milliseconds
         private const val REPORTING_INTERVAL: Long = 3500 // a bit increased from original
         private const val MOBILE_SCAN_INTERVAL = REPORTING_INTERVAL / 2 - 100 // scans are rather fast, but are likely to update slowly
-        private const val WLAN_SCAN_INTERVAL = REPORTING_INTERVAL - 100 // scans are slow, ca 2.5 s, and a higher interval does not make sense
+        private const val WLAN_SCAN_INTERVAL = REPORTING_INTERVAL - 100 // scans are slow, ca 2.5 s, and a shorter interval does not make sense
         //
         // Other public methods
         //
@@ -902,6 +896,8 @@ class BackendService : LocationBackendService() {
             return freq > 2500
         }
 
+        // todo: really care about difference between wifi 5 and 6?
+        //  only relevant if range is different!
         fun ScanResult.getWifiType(): EmitterType =
             when {
                 frequency < 3000 -> EmitterType.WLAN2 // 2401 - 2495 MHz
@@ -911,13 +907,6 @@ class BackendService : LocationBackendService() {
                     // except of 5945... which is on both regions -> how to tell apart?
                 else -> EmitterType.WLAN5
             }
-
-        // simple approximate distance calculation, accurate enough if latitude difference is small
-        fun distance(loc1: Location, lat2: Double, lon2: Double): Double {
-            val distLat = (loc1.latitude - lat2) * DEG_TO_METER
-            val distLon = (loc1.longitude - lon2) * DEG_TO_METER * cos(Math.toRadians(loc1.latitude))
-            return sqrt(distLat * distLat + distLon * distLon)
-        }
 
     }
 }

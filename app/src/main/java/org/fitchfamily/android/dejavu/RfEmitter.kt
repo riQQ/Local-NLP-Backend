@@ -22,8 +22,9 @@ package org.fitchfamily.android.dejavu
 import android.location.Location
 import android.os.Bundle
 import android.util.Log
-import org.fitchfamily.android.dejavu.BackendService.Companion.distance
 import org.fitchfamily.android.dejavu.EmitterType.*
+import kotlin.math.cos
+import kotlin.math.sqrt
 
 /**
  * Created by tfitch on 8/27/17.
@@ -254,6 +255,18 @@ class RfEmitter(val type: EmitterType, val id: String) {
             else
                 changeStatus(EmitterStatus.STATUS_CHANGED, "updateLocation('$logString') BBOX update")
         }
+    }
+
+    // simple approximate distance calculation, accurate enough if latitude difference is small
+    // todo: maybe switch to loc1.distanceTo(Location("whatever").apply { latitude = lat2; longitude = lon2 })
+    //  this is more correct (especially near poles and when crossing 180th meridian
+    //  but likely slower... and we will call it every time we have an inaccurate gps location, for
+    //   every found (wifi) emitter -> check performance difference!
+    //   maybe bbox could have some centerLocation that would be used here
+    private fun distance(loc1: Location, lat2: Double, lon2: Double): Double {
+        val distLat = (loc1.latitude - lat2) * BackendService.DEG_TO_METER
+        val distLon = (loc1.longitude - lon2) * BackendService.DEG_TO_METER * cos(Math.toRadians(loc1.latitude))
+        return sqrt(distLat * distLat + distLon * distLon)
     }
 
     /**
