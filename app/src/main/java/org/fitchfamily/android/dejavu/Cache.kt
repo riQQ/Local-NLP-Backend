@@ -66,7 +66,7 @@ internal class Cache(context: Context?) {
             sync()
             this.clear()
             db!!.close()
-            db = null
+            db = null // todo: have some db.closed instead of nullable crap?
         }
     }
 
@@ -154,26 +154,6 @@ internal class Cache(context: Context?) {
             if (workingSet.size > MAX_WORKING_SET_SIZE) {
                 if (DEBUG) Log.d(TAG, "sync() - Working set larger than $MAX_WORKING_SET_SIZE, clearing working set.")
                 workingSet.clear()
-            }
-        }
-    }
-
-    fun getIds(rfType: EmitterType, bb: BoundingBox): Set<RfIdentification> {
-        synchronized(this) {
-            return if (db == null)
-                emptySet()
-            else db!!.getIds(rfType, bb)
-        }
-    }
-
-    fun getEmitters(rfTypes: Collection<EmitterType>, bb: BoundingBox): Set<RfEmitter> {
-        synchronized(this) {
-            return if (db == null)
-                emptySet()
-            else {
-                val emitters = db!!.getEmitters(rfTypes, bb)
-                workingSet.putAll(emitters.associateBy { it.uniqueId })
-                emitters
             }
         }
     }
