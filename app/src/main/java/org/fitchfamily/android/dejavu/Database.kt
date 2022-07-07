@@ -358,7 +358,7 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
     fun insert(emitter: RfEmitter) {
         if (DEBUG) Log.d(TAG, "Inserting " + emitter.logString + " into db")
         sqlSampleInsert!!.bindString(1, emitter.uniqueId)
-        sqlSampleInsert!!.bindString(2, emitter.type.ordinal.toString())
+        sqlSampleInsert!!.bindString(2, emitter.type.toString())
         sqlSampleInsert!!.bindString(3, emitter.lat.toString())
         sqlSampleInsert!!.bindString(4, emitter.lon.toString())
         sqlSampleInsert!!.bindString(5, emitter.radiusNS.toString())
@@ -447,7 +447,7 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
                     val result = RfEmitter(
                         getRfId(
                             cursor.getString(6),
-                            EmitterType.values()[cursor.getInt(0)]
+                            EmitterType.valueOf(cursor.getString(0))
                         ), info)
                     emitters.add(result)
                 } while (cursor.moveToNext())
