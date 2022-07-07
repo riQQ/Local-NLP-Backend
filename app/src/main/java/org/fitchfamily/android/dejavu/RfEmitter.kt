@@ -219,24 +219,17 @@ class RfEmitter(val type: EmitterType, val id: String) {
      * @param gpsLoc A position report from a trusted (non RF emitter) source
      */
     fun updateLocation(gpsLoc: Location?) {
-        if (status == EmitterStatus.STATUS_BLACKLISTED) return
+        if (gpsLoc == null || status == EmitterStatus.STATUS_BLACKLISTED) return
         val cov = coverage // avoid potential weird issues with null value
 
-        // don't update coverage if:
-        if (
-            // no gps location
-            gpsLoc == null
-            // or gps too accurate
-            || (gpsLoc.accuracy > ourCharacteristics.requiredGpsAccuracy
-                    // and either new emitter
-                    && (cov == null
-                    // or distance close enough to believe we might still be in range
-                    //   this restriction allows updating emitters that are found unbelievably far
-                    //   from their known location, so they will be blacklisted
-                        || distance(gpsLoc, cov.center_lat, cov.center_lon)
-                            < (type.getRfCharacteristics().maximumRange + gpsLoc.accuracy) * 2
-                       )
-            )) {
+        // don't update coverage if gps too inaccurate
+        if (gpsLoc.accuracy > ourCharacteristics.requiredGpsAccuracy
+                // except if distance is really far and we're sure emitter should be out of range
+                //   this allows updating emitters that are found unbelievably far
+                //   from their known location, so they will be blacklisted
+                && (cov == null || distance(gpsLoc, cov.center_lat, cov.center_lon)
+                            < (type.getRfCharacteristics().maximumRange + gpsLoc.accuracy) * 2)
+            ) {
             if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location inaccurate.")
             return
         }
