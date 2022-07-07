@@ -53,7 +53,12 @@ class BackendService : LocationBackendService() {
     private val wifiManager: WifiManager by lazy { applicationContext.getSystemService(WIFI_SERVICE) as WifiManager }
     private val wifiBroadcastReceiver: BroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            scope.launch { onWiFisChanged() }
+            // don't call onWiFisChanged() if scan wasn't successful
+            val scanSuccessful = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                    intent.extras?.getBoolean(WifiManager.EXTRA_RESULTS_UPDATED)
+                else null
+            if (scanSuccessful != false)
+                scope.launch { onWiFisChanged(scanSuccessful == true) }
         }
     }
     private var gpsLocation: Kalman? = null // Filtered GPS (because GPS is so bad on Moto G4 Play)
@@ -514,15 +519,16 @@ class BackendService : LocationBackendService() {
      * the area.
      */
     @Synchronized
-    private fun onWiFisChanged() {
+    private fun onWiFisChanged(definitelyNewResults: Boolean) {
         if (emitterCache == null) {
             wifiScanInProgress = false
             return
         }
         val scanResults = wifiManager.scanResults
-        if (scanResults.sameAs(oldScanResults)) {
+        if (!definitelyNewResults && scanResults.sameAs(oldScanResults)) {
+            // don't continue if scan results didn't change
             if (DEBUG) Log.d(TAG, "onWiFisChanged(): scan results are the same as old results")
-            //return // TODO: only log for now, maybe do something later
+            return
         }
         val observations = hashSetOf<Observation>()
         if (DEBUG) Log.d(TAG, "onWiFisChanged(): " + scanResults.size + " scan results")
@@ -532,7 +538,8 @@ class BackendService : LocationBackendService() {
 //                else EmitterType.WLAN2
             val rfType = scanResult.getWifiType()
             if (DEBUG) Log.v(TAG, "rfType=$rfType, ScanResult: $scanResult")
-            val observation = Observation(bssid,
+            val observation = Observation(
+                bssid,
                 rfType,
                 WifiManager.calculateSignalLevel(scanResult.level, MAXIMUM_ASU),
                 scanResult.SSID
@@ -547,12 +554,13 @@ class BackendService : LocationBackendService() {
         wifiScanInProgress = false
     }
 
-    // android likes providing the same lists with new timestamps, so compare using signal levels
+    // for some reason newResults == oldResults equals didn't work in a test
     private fun List<ScanResult>.sameAs(oldResults: List<ScanResult>): Boolean {
         if (size != oldResults.size) return false
         for (i in 0 until size) {
             val new = get(i)
             val old = oldResults[i]
+            // compare only main attributes
             if (new.BSSID == old.BSSID && new.SSID == old.SSID && new.level == old.level && new.frequency == old.frequency)
                 continue
             return false
@@ -596,6 +604,7 @@ class BackendService : LocationBackendService() {
      * 1. Add the emitters to the set of emitters we have seen in this processing period.
      * 2. If the GPS is accurate enough, update our coverage estimates for the emitters.
      * 3. If the GPS is accurate enough, update a list of emitters we think we should have seen.
+     *   -> not any more
      * 3. Compute a position based on the current observations.
      * 4. If our collection period is over, report our position to microG/UnifiedNlp and
      * synchonize our information with the flash based database.
