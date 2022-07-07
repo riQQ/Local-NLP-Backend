@@ -573,15 +573,19 @@ class BackendService : LocationBackendService() {
      * no thread currently exists, start one.
      *
      * @param observations A set of RF emitter observations (all must be of the same type)
-//     * @param timeMs The time the observations were made. (ends up unused, thus commented)
      */
     @Synchronized
-    private fun queueForProcessing(observations: Collection<Observation> /*, timeMs: Long*/) {
-        // ignore location if it is old, we don't want to update emitters with outdated locations
-        val loc = gpsLocation?.location?.takeIf {
-            gpsLocation!!.timeOfUpdate > oldLocationUpdate && notNullIsland(it)
+    private fun queueForProcessing(observations: Collection<Observation>) {
+        // ignore location if it is old (i.e. from previous processing period),
+        // we don't want to update emitters using outdated locations
+        val loc = gpsLocation?.let {
+            if (it.timeOfUpdate > oldLocationUpdate && notNullIsland(it.location)) it.location // todo: maybe allow slightly old locations? like one processing period
+            else {
+                if (DEBUG) Log.d(TAG,"queueForProcessing() - Location too old or near null island")
+                null
+            }
         }
-        val work = WorkItem(observations, loc /*, timeMs*/)
+        val work = WorkItem(observations, loc)
         workQueue.offer(work)
         if (backgroundJob.isActive)
             return
@@ -603,11 +607,9 @@ class BackendService : LocationBackendService() {
      * Process a group of observations. Process in this context means
      * 1. Add the emitters to the set of emitters we have seen in this processing period.
      * 2. If the GPS is accurate enough, update our coverage estimates for the emitters.
-     * 3. If the GPS is accurate enough, update a list of emitters we think we should have seen.
-     *   -> not any more
      * 3. Compute a position based on the current observations.
      * 4. If our collection period is over, report our position to microG/UnifiedNlp and
-     * synchonize our information with the flash based database.
+     * synchronize our information with the flash based database.
      *
      * @param myWork
      */
@@ -631,9 +633,9 @@ class BackendService : LocationBackendService() {
 
         // Update emitter coverage based on GPS as needed and get the set of locations
         // the emitters are known to be seen at.
-        updateEmitters(emitters, myWork.loc/*, myWork.time*/)
+        updateEmitters(emitters, myWork.loc)
 
-        // start new period if necessary
+        // start new processing period if necessary
         if (!periodicProcessing.isActive)
             startProcessingPeriod()
     }
@@ -643,15 +645,14 @@ class BackendService : LocationBackendService() {
      *
      * @param emitters The emitters we have just observed
      * @param gps The GPS position at the time the observations were collected.
-//     * @param curTime The time the observations were collected (not used, thus commented)
      */
     @Synchronized
-    private fun updateEmitters(emitters: Collection<RfEmitter>, gps: Location? /*, curTime: Long*/) {
+    private fun updateEmitters(emitters: Collection<RfEmitter>, gps: Location?) {
         if (emitterCache == null) {
             Log.d(TAG, "updateEmitters() - emitterCache is null: creating")
             emitterCache = Cache(this)
         }
-        if (gpsLocation == null) return // no need to go through loop and check whether it's null several times
+        if (gps == null) return
         for (emitter in emitters) {
             emitter.updateLocation(gps)
         }
