@@ -23,6 +23,7 @@ import android.location.Location
 import android.os.Bundle
 import android.util.Log
 import org.fitchfamily.android.dejavu.EmitterType.*
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sqrt
 
@@ -62,7 +63,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
     }
 
     private val ourCharacteristics = type.getRfCharacteristics()
-    var coverage: BoundingBox? = null
+    var coverage: BoundingBox? = null // null for new or blacklisted emitters
         private set
     var note: String = ""
         set(value) {
@@ -72,7 +73,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
             if (isBlacklisted())
                 changeStatus(EmitterStatus.STATUS_BLACKLISTED, "emitter blacklisted")
         }
-    var lastObservation: Observation? = null
+    var lastObservation: Observation? = null // null if we haven't seen this emitter
         set(value) {
             field = value
             note = value?.note ?: ""
@@ -218,9 +219,16 @@ class RfEmitter(val type: EmitterType, val id: String) {
      *
      * @param gpsLoc A position report from a trusted (non RF emitter) source
      */
-    fun updateLocation(gpsLoc: Location?) {
-        if (gpsLoc == null || status == EmitterStatus.STATUS_BLACKLISTED) return
+    fun updateLocation(gpsLoc: Location) {
+        if (status == EmitterStatus.STATUS_BLACKLISTED) return
         val cov = coverage // avoid potential weird issues with null value
+
+        // don't update location if there is more than 30 sec difference between last observation and gps location
+        // this should not happen, but can occur if a wifi scan takes vary long to complete
+        if (abs((lastObservation?.elapsedRealtimeNanos ?: 0L) - gpsLoc.elapsedRealtimeNanos) > 30 * 1e9) {
+            if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location and observation differ by more than 30s.")
+            return
+        }
 
         // don't update coverage if gps too inaccurate
         if (gpsLoc.accuracy > ourCharacteristics.requiredGpsAccuracy
