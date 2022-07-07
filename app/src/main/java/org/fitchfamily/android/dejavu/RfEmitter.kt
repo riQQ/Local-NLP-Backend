@@ -172,12 +172,14 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 // database as "normal" emitter. If so we ought to either remove the entry (for
                 // blacklisted SSIDs) or set invalid radius (for too large coverage).
                 if (coverage != null) {
-                    if (isBlacklisted())
+                    if (isBlacklisted()) {
                         db.drop(this)
-                    else
-                        db.setInvalid(this) // todo: add to Database.kt
+                        if (DEBUG) Log.d(TAG, "sync('$logString') - Blacklisted dropping from database.")
+                    } else {
+                        db.setInvalid(this)
+                        if (DEBUG) Log.d(TAG, "sync('$logString') - Blacklisted setting to invalid.")
+                    }
                     coverage = null
-                    if (DEBUG) Log.d(TAG, "sync('$logString') - Blacklisted dropping from database.")
                 }
             EmitterStatus.STATUS_NEW -> {
                 // Not in database, we have location. Add to database
@@ -226,16 +228,16 @@ class RfEmitter(val type: EmitterType, val id: String) {
         // don't update location if there is more than 30 sec difference between last observation and gps location
         // this should not happen, but can occur if a wifi scan takes vary long to complete
         if (abs((lastObservation?.elapsedRealtimeNanos ?: 0L) - gpsLoc.elapsedRealtimeNanos) > 30 * 1e9) {
-            if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location and observation differ by more than 30s.")
+            if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location and observation differ by more than 30s: ${(lastObservation?.elapsedRealtimeNanos ?: 0L) - gpsLoc.elapsedRealtimeNanos}ms")
             return
         }
 
         // don't update coverage if gps too inaccurate
         if (gpsLoc.accuracy > ourCharacteristics.requiredGpsAccuracy
-                // except if distance is really far and we're sure emitter should be out of range
+                // except if distance is really large and we're sure emitter should be out of range
                 //   this allows updating emitters that are found unbelievably far
                 //   from their known location, so they will be blacklisted
-                && (cov == null || distance(gpsLoc, cov.center_lat, cov.center_lon)
+                && (cov == null || approximateDistance(gpsLoc, cov.center_lat, cov.center_lon)
                             < (type.getRfCharacteristics().maximumRange + gpsLoc.accuracy) * 2)
             ) {
             if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location inaccurate.")
@@ -258,13 +260,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
         }
     }
 
-    // simple approximate distance calculation, accurate enough if latitude difference is small
-    // todo: maybe switch to loc1.distanceTo(Location("whatever").apply { latitude = lat2; longitude = lon2 })
-    //  this is more correct (especially near poles and when crossing 180th meridian
-    //  but likely slower... and we will call it every time we have an inaccurate gps location, for
-    //   every found (wifi) emitter -> check performance difference!
-    //   maybe bbox could have some centerLocation that would be used here
-    private fun distance(loc1: Location, lat2: Double, lon2: Double): Double {
+    // simple approximate distance calculation, accurate enough if locations are close together
+    private fun approximateDistance(loc1: Location, lat2: Double, lon2: Double): Double {
         val distLat = (loc1.latitude - lat2) * BackendService.DEG_TO_METER
         val distLon = (loc1.longitude - lon2) * BackendService.DEG_TO_METER * cos(Math.toRadians(loc1.latitude))
         return sqrt(distLat * distLat + distLon * distLon)

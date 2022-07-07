@@ -581,7 +581,7 @@ class BackendService : LocationBackendService() {
         val loc = gpsLocation?.let {
             if (it.timeOfUpdate > oldLocationUpdate && notNullIsland(it.location)) it.location // todo: maybe allow slightly old locations? like one processing period
             else {
-                if (DEBUG) Log.d(TAG,"queueForProcessing() - Location too old or near null island")
+                if (DEBUG) Log.d(TAG,"queueForProcessing() - Location too old or near null island, ${it.timeOfUpdate - oldLocationUpdate}ms")
                 null
             }
         }
