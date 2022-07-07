@@ -64,7 +64,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
     private val ourCharacteristics = type.getRfCharacteristics()
     var coverage: BoundingBox? = null
         private set
-    var note: String? = "" // TODO: setting note currently triggers blacklist check, but this is not necessary when loading emitter from db!
+    var note: String = ""
         set(value) {
             if (field == value)
                 return
@@ -321,7 +321,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
      * @return True if the emitter is blacklisted (should not be used in position computations).
      */
     private fun isBlacklisted(): Boolean =
-        if (note.isNullOrEmpty())
+        if (note.isEmpty())
             false
         else
              when (type) {
@@ -339,7 +339,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
      * @return True if emitter should be blacklisted.
      */
     private fun ssidBlacklisted(): Boolean {
-        val lc = note?.lowercase() ?: return false
+        val lc = note.lowercase()
 
         // split lc into continuous occurrences of a-z
         // most 'contains' checks only make sense if the string is a separate word
@@ -359,15 +359,15 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 || blacklistEndsWith.any { lc.endsWith(it) }
                 || blacklistEquals.contains(lc)
                 // a few less simple checks
-                || note?.startsWith("MOTO") == true        // "MOTO9564" and "MOTO9916" seen
-                || lcSplit.first() == "audi" // some cars seem to have this AP on-board
-                || lc == macSuffix // Apparent default SSID name for many cars
+                || note.startsWith("MOTO")        // "MOTO9564" and "MOTO9916" seen
+                || lcSplit.first() == "audi"            // some cars seem to have this AP on-board
+                || lc == macSuffix                      // Apparent default SSID name for many cars
                 // deal with words not achievable with blacklistWords
                 || (lcSplit.contains("admin") && lc.contains("admin@ms"))
                 || (lcSplit.contains("guest") && lc.contains("guest@ms"))
-                || (lcSplit.contains("contiki") && lc.contains("contiki-wifi")) // transport
+                || (lcSplit.contains("contiki") && lc.contains("contiki-wifi"))    // transport
                 || (lcSplit.contains("interakti") && lc.contains("nsb_interakti")) // ???
-                || (lcSplit.contains("nvram") && lc.contains("nvram warning")) // transport
+                || (lcSplit.contains("nvram") && lc.contains("nvram warning"))     // transport
 
         if (DEBUG && blacklisted) Log.d(TAG, "blacklistWifi('$logString'): blacklisted")
         return blacklisted

@@ -24,7 +24,6 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.database.sqlite.SQLiteStatement
 import android.util.Log
-import java.util.HashSet
 
 /**
  *
@@ -54,10 +53,10 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
             CREATE TABLE IF NOT EXISTS $TABLE_SAMPLES (
                 $COL_RFID STRING PRIMARY KEY,
                 $COL_TYPE STRING,
-                $COL_TRUST INTEGER,
+                $OLD_COL_TRUST INTEGER,
                 $COL_LAT REAL,
                 $COL_LON REAL,
-                $COL_RAD REAL,
+                $OLD_COL_RAD REAL,
                 $COL_NOTE STRING
             );
         """.trimIndent()
@@ -83,7 +82,7 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
                 ("CREATE TABLE IF NOT EXISTS " + TABLE_SAMPLES + "(" +
                         COL_RFID + " STRING PRIMARY KEY, " +
                         COL_TYPE + " STRING, " +
-                        COL_TRUST + " INTEGER, " +
+                        OLD_COL_TRUST + " INTEGER, " +
                         COL_LAT + " REAL, " +
                         COL_LON + " REAL, " +
                         COL_RAD_NS + " REAL, " +
@@ -94,7 +93,7 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
                 ("INSERT INTO " + TABLE_SAMPLES + "(" +
                         COL_RFID + ", " +
                         COL_TYPE + ", " +
-                        COL_TRUST + ", " +
+                        OLD_COL_TRUST + ", " +
                         COL_LAT + ", " +
                         COL_LON + ", " +
                         COL_RAD_NS + ", " +
@@ -103,11 +102,11 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
                         ") SELECT " +
                         COL_RFID + ", " +
                         COL_TYPE + ", " +
-                        COL_TRUST + ", " +
+                        OLD_COL_TRUST + ", " +
                         COL_LAT + ", " +
                         COL_LON + ", " +
-                        COL_RAD + ", " +
-                        COL_RAD + ", " +
+                        OLD_COL_RAD + ", " +
+                        OLD_COL_RAD + ", " +
                         COL_NOTE +
                         " FROM " + TABLE_SAMPLES + "_old;")
             )
@@ -125,10 +124,10 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
         db.execSQL("BEGIN TRANSACTION;")
         db.execSQL(
             ("CREATE TABLE IF NOT EXISTS " + TABLE_SAMPLES + "_new (" +
-                    COL_HASH + " TEXT PRIMARY KEY, " +
+                    OLD_COL_HASH + " TEXT PRIMARY KEY, " +
                     COL_RFID + " TEXT, " +
                     COL_TYPE + " TEXT, " +
-                    COL_TRUST + " INTEGER, " +
+                    OLD_COL_TRUST + " INTEGER, " +
                     COL_LAT + " REAL, " +
                     COL_LON + " REAL, " +
                     COL_RAD_NS + " REAL, " +
@@ -138,10 +137,10 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
         val insert = db.compileStatement(
             ("INSERT INTO " +
                     TABLE_SAMPLES + "_new(" +
-                    COL_HASH + ", " +
+                    OLD_COL_HASH + ", " +
                     COL_RFID + ", " +
                     COL_TYPE + ", " +
-                    COL_TRUST + ", " +
+                    OLD_COL_TRUST + ", " +
                     COL_LAT + ", " +
                     COL_LON + ", " +
                     COL_RAD_NS + ", " +
@@ -150,7 +149,7 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);")
         )
         val query = ("SELECT " +
-                COL_RFID + "," + COL_TYPE + "," + COL_TRUST + "," + COL_LAT + "," + COL_LON + "," + COL_RAD_NS + "," + COL_RAD_EW + "," + COL_NOTE + " " +
+                COL_RFID + "," + COL_TYPE + "," + OLD_COL_TRUST + "," + COL_LAT + "," + COL_LON + "," + COL_RAD_NS + "," + COL_RAD_EW + "," + COL_NOTE + " " +
                 "FROM " + TABLE_SAMPLES + ";")
         val cursor = db.rawQuery(query, null)
         try {
@@ -195,7 +194,7 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
             CREATE TABLE IF NOT EXISTS ${TABLE_SAMPLES}_new (
             $COL_RFID TEXT PRIMARY KEY NOT NULL,
             $COL_TYPE INTEGER NOT NULL,
-            $COL_TRUST INTEGER NOT NULL,
+            $OLD_COL_TRUST INTEGER NOT NULL,
             $COL_LAT REAL NOT NULL,
             $COL_LON REAL NOT NULL,
             $COL_RAD_NS REAL NOT NULL,
@@ -207,16 +206,16 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
         db.execSQL("DROP INDEX IF EXISTS $SPATIAL_INDEX_SAMPLES;")
         // add 2.4 GHz WiFis
         db.execSQL("""
-            INSERT INTO ${TABLE_SAMPLES}_new($COL_RFID, $COL_TYPE, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE)
-            SELECT '${EmitterType.WLAN2}/' || $COL_RFID, ${EmitterType.WLAN2.ordinal}, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
+            INSERT INTO ${TABLE_SAMPLES}_new($COL_RFID, $COL_TYPE, $OLD_COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE)
+            SELECT '${EmitterType.WLAN2}/' || $COL_RFID, ${EmitterType.WLAN2.ordinal}, $OLD_COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
             FROM $TABLE_SAMPLES
             WHERE $COL_TYPE = 'WLAN_24GHZ';
         """.trimIndent()
         )
         // add 5 GHz WiFis
         db.execSQL("""
-            INSERT INTO ${TABLE_SAMPLES}_new($COL_RFID, $COL_TYPE, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE)
-            SELECT '${EmitterType.WLAN5}/' || $COL_RFID, ${EmitterType.WLAN5.ordinal}, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
+            INSERT INTO ${TABLE_SAMPLES}_new($COL_RFID, $COL_TYPE, $OLD_COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE)
+            SELECT '${EmitterType.WLAN5}/' || $COL_RFID, ${EmitterType.WLAN5.ordinal}, $OLD_COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
             FROM $TABLE_SAMPLES
             WHERE $COL_TYPE = 'WLAN_5GHZ';
         """.trimIndent()
@@ -224,8 +223,8 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
         // cell towers are already unique, but we need to split the types, as they may hav different characteristics
         for (emitterType in arrayOf(EmitterType.GSM, EmitterType.WCDMA, EmitterType.CDMA, EmitterType.LTE)) {
             db.execSQL("""
-            INSERT INTO ${TABLE_SAMPLES}_new($COL_RFID, $COL_TYPE, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE)
-            SELECT $COL_RFID, ${emitterType.ordinal}, $COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
+            INSERT INTO ${TABLE_SAMPLES}_new($COL_RFID, $COL_TYPE, $OLD_COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE)
+            SELECT $COL_RFID, ${emitterType.ordinal}, $OLD_COL_TRUST, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
             FROM $TABLE_SAMPLES
             WHERE $COL_TYPE = 'MOBILE' AND $COL_RFID LIKE '${emitterType}%';
         """.trimIndent()
@@ -241,7 +240,8 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
         // another upgrade...
         // remove trust column
         // change type back to text
-        // todo: consider changing radius to cm or mm, as this is precise enough and is smaller/faster
+        // todo: consider changing radius to cm or mm, as this is precise enough and smaller due to how floats work in SQLite
+        //  but is it also faster?
         db.execSQL("BEGIN TRANSACTION;")
         db.execSQL("""
             CREATE TABLE IF NOT EXISTS ${TABLE_SAMPLES}_new (
@@ -440,8 +440,8 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
                     val info = EmitterInfo(
                         latitude = cursor.getDouble(1),
                         longitude = cursor.getDouble(2),
-                        radius_ns = cursor.getDouble(3).toFloat(),
-                        radius_ew = cursor.getDouble(4).toFloat(),
+                        radius_ns = cursor.getFloat(3),
+                        radius_ew = cursor.getFloat(4),
                         note = cursor.getString(5) ?: ""
                     )
                     val result = RfEmitter(
@@ -477,14 +477,14 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
                 " FROM " + TABLE_SAMPLES +
                 " WHERE " + COL_RFID + "='" + identification.uniqueId + "';")
 
-        if (DEBUG) Log.d(TAG, "getEmitter(): $identification");
+        if (DEBUG) Log.d(TAG, "getEmitter(): $identification")
         database.rawQuery(query, null).use { cursor ->
             result = if (cursor!!.moveToFirst()) {
                 val ei = EmitterInfo(
                     latitude = cursor.getDouble(0),
                     longitude = cursor.getDouble(1),
-                    radius_ns = cursor.getDouble(2).toFloat(),
-                    radius_ew = cursor.getDouble(3).toFloat(),
+                    radius_ns = cursor.getFloat(2),
+                    radius_ew = cursor.getFloat(3),
                     note = cursor.getString(4) ?: ""
                 )
                 RfEmitter(identification, ei)
@@ -500,23 +500,25 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
         private const val NAME = "rf.db"
         private const val TABLE_SAMPLES = "emitters"
         private const val SPATIAL_INDEX_SAMPLES = "emitters_index"
-        private const val COL_HASH = "rfHash" // v3 of database, removed in v4
         private const val COL_TYPE = "rfType"
         private const val COL_RFID = "rfID"
-        private const val COL_TRUST = "trust"
         private const val COL_LAT = "latitude"
         private const val COL_LON = "longitude"
-        private const val COL_RAD = "radius" // v1 of database
         private const val COL_RAD_NS = "radius_ns" // v2 of database
         private const val COL_RAD_EW = "radius_ew" // v2 of database
         private const val COL_NOTE = "note"
+
+        // columns used in old db versions
+        private const val OLD_COL_HASH = "rfHash" // v3 of database, removed in v4
+        private const val OLD_COL_TRUST = "trust" // removed in v5
+        private const val OLD_COL_RAD = "radius" // v1 of database
     }
 }
 
 class EmitterInfo(
-    val latitude: Double = 0.0,
-    val longitude: Double = 0.0,
-    val radius_ns: Float = 0f,
-    val radius_ew: Float = 0f,
-    val note: String? = ""
+    val latitude: Double,
+    val longitude: Double,
+    val radius_ns: Float,
+    val radius_ew: Float,
+    val note: String
 )
