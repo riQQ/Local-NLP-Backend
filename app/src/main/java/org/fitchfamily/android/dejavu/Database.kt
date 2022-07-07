@@ -259,7 +259,7 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
         for (emitterType in EmitterType.values()) {
             db.execSQL("""
             INSERT INTO ${TABLE_SAMPLES}_new($COL_RFID, $COL_TYPE, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE)
-            SELECT $COL_RFID, ${emitterType}, $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
+            SELECT $COL_RFID, '${emitterType}', $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW, $COL_NOTE
             FROM $TABLE_SAMPLES
             WHERE $COL_RFID LIKE '${emitterType}%';
         """.trimIndent()
