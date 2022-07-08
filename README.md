@@ -11,6 +11,29 @@ This backend uses no network data. All data acquired by the phone stays on the p
 <a href="https://f-droid.org/packages/org.fitchfamily.android.dejavu/" target="_blank">
 <img src="https://f-droid.org/badge/get-it-on.png" alt="Get it on F-Droid" height="90"/></a>
 
+Modified version
+================
+This is a modified version of the *Déjà Vu* backend.
+Changes:
+* emitters are not removed from the database. Reason: in original *Déjà Vu*, many WiFis are removed when they could not be reached for a while, e.g. because of thick walls. Having useless entries in the database is better than this, and reduces database writes and background processing.
+* the blacklist is extended and now actually used
+* emitters with invalid LAC are ignored
+* emitters with suspiciously high radius (probably moving WiFis) are blacklisted
+* fixed a bug in BoundingBox
+* try waiting for WiFi scan to finish before reporting position
+* don't use outdated results from failed or throttled WiFi scans
+* faster, but less exact distance calculations. For the used distances up to 100 km, the differences are negligible.
+* avoid large time differences between GPS locations and emitter scan
+* many internal changes
+* pobably more...
+
+Further plans:
+* find and fix potential bugs
+* UI for import/export and maybe more
+* update to newer API. This means some old method for detecting mobile towers will be removed, and may break tower detection on some old devices.
+* detect 5G emitters, and adapt characteristics to typical cell sizes
+
+
 Yet Another Location Backend
 ============================
 This grew out of frustration with my earlier [mobile tower backend’s](https://github.com/n76/Local-GSM-Backend) two major faults:
