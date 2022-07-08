@@ -24,8 +24,6 @@ import android.os.Bundle
 import android.util.Log
 import org.fitchfamily.android.dejavu.EmitterType.*
 import kotlin.math.abs
-import kotlin.math.cos
-import kotlin.math.sqrt
 
 /**
  * Created by tfitch on 8/27/17.
@@ -82,7 +80,6 @@ class RfEmitter(val type: EmitterType, val id: String) {
         private set
 
     val uniqueId: String get() = rfIdentification.uniqueId
-    val typeString: String get() = type.toString()
     val rfIdentification: RfIdentification get() = RfIdentification(id, type)
     val lat: Double get() = coverage?.center_lat ?: 0.0
     val lon: Double get() = coverage?.center_lon ?: 0.0
@@ -111,8 +108,6 @@ class RfEmitter(val type: EmitterType, val id: String) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is RfIdentification) return false
-        // todo: is this really ok? or should it rather be sth like other.rfIdentification?
-        //  also: does it happen that on wifi AP has 2 SSID, but one BSSID/MAC? then rfId is not unique for emitter!
         return rfIdentification == other
     }
 
@@ -177,7 +172,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
                         if (DEBUG) Log.d(TAG, "sync('$logString') - Blacklisted dropping from database.")
                     } else {
                         db.setInvalid(this)
-                        if (DEBUG) Log.d(TAG, "sync('$logString') - Blacklisted setting to invalid.")
+                        if (DEBUG) Log.d(TAG, "sync('$logString') - Blacklisted setting to invalid, radius too large: $radius, $radiusEW, $radiusNS.")
                     }
                     coverage = null
                 }
@@ -357,10 +352,10 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 || blacklistEndsWith.any { lc.endsWith(it) }
                 || blacklistEquals.contains(lc)
                 // a few less simple checks
-                || note.startsWith("MOTO")        // "MOTO9564" and "MOTO9916" seen
+                || lcSplit.contains("moto") && note.startsWith("MOTO") // "MOTO9564" and "MOTO9916" seen
                 || lcSplit.first() == "audi"            // some cars seem to have this AP on-board
                 || lc == macSuffix                      // Apparent default SSID name for many cars
-                // deal with words not achievable with blacklistWords
+                // deal with words not achievable with blacklistWords, checking only if lcSplit.contains(<something>)
                 || (lcSplit.contains("admin") && lc.contains("admin@ms"))
                 || (lcSplit.contains("guest") && lc.contains("guest@ms"))
                 || (lcSplit.contains("contiki") && lc.contains("contiki-wifi"))    // transport
@@ -370,17 +365,6 @@ class RfEmitter(val type: EmitterType, val id: String) {
         if (DEBUG && blacklisted) Log.d(TAG, "blacklistWifi('$logString'): blacklisted")
         return blacklisted
     }
-
-    /**
-     * Only some types of emitters can be updated when a GPS position is received. A
-     * simple check but done in a couple places so extracted out to this routine so that
-     * we are consistent in how we check things.
-     *
-     * @return True if coverage and/or trust can be updated.
-     */
-    private fun canUpdate() =
-        status != EmitterStatus.STATUS_BLACKLISTED && status != EmitterStatus.STATUS_UNKNOWN
-
 
     /**
      * Our status can only make a small set of allowed transitions. Basically a simple
@@ -416,131 +400,135 @@ class RfEmitter(val type: EmitterType, val id: String) {
         if (DEBUG) Log.d(TAG, "$info: tried switching to $newStatus, result: $status")
         return
     }
-
-    companion object {
-        private val DEBUG = BuildConfig.DEBUG
-
-        private const val TAG = "DejaVu RfEmitter"
-        private const val METERS: Long = 1
-        private const val KM = METERS * 1000
-
-        // Tag/names for additional information on location records
-        const val LOC_RF_ID = "rfid"
-        const val LOC_RF_TYPE = "rftype"
-        const val LOC_ASU = "asu"
-        const val LOC_MIN_COUNT = "minCount"
-
-        private val splitRegex = "[^a-z]".toRegex() // for splitting SSID into "words"
-        // use hashSets for fast blacklist*.contains() check
-        private val blacklistWords = hashSetOf(
-            "android", "androidap", "ipad", "phone", "motorola", "huawei", // mobile tethering
-            "mobile", // sounds like name for mobile hotspot
-            "deinbus", "ecolines", "eurolines", "fernbus", "flixbus", "muenchenlinie",
-            "postbus", "skanetrafiken", "oresundstag", "regiojet", // transport
-
-            // Per an instructional video on YouTube, recent (2014 and later) Chrysler-Fiat
-            // vehicles have a SSID of the form "Chrysler uconnect xxxxxx" where xxxxxx
-            // seems to be a hex digit string (suffix of BSSID?).
-            "uconnect", // Chrysler built vehicles
-            "chevy", // "Chevy Cruz 7774" and "Davids Chevy" seen.
-            "silverado", // GMC Silverado. "Bryces Silverado" seen, maybe move to startsWith?
-            "myvolvo", // Volvo in car WiFi, maybe move to startsWith?
-        )
-        private val blacklistStartsWith = hashSetOf(
-            "moto ", "samsung galaxy", "lg aristo", // mobile tethering
-            "cellspot", // T-Mobile US portable cell based WiFi
-            "verizon", // Verizon mobile hotspot
-
-            // Per some instructional videos on YouTube, recent (2015 and later)
-            // General Motors built vehicles come with a default WiFi SSID of the
-            // form "WiFi Hotspot 1234" where the 1234 is different for each car.
-            "wifi hotspot ", // Default GM vehicle WiFi name
-
-            // Per instructional video on YouTube, Mercedes cars have and SSID of
-            // "MB WLAN nnnnn" where nnnnn is a 5 digit number.
-            "mb wlan ",
-            "westbahn ", "buswifi", "coachamerica", "disneylandresortexpress",
-            "taxilinq", "transitwirelesswifi", // transport, maybe move some to words?
-            "yicarcam", // Dashcam WiFi.
-        )
-        private val blacklistEndsWith = hashSetOf(
-            "corvette", // Chevy Corvette. "TS Corvette" seen.
-
-            // General Motors built vehicles SSID can be changed but the recommended SSID to
-            // change to is of the form "first_name vehicle_model" (e.g. "Bryces Silverado").
-            "truck", // "Morgans Truck" and "Wally Truck" seen
-            "suburban", // Chevy/GMC Suburban. "Laura Suburban" seen
-            "terrain", // GMC Terrain. "Nelson Terrain" seen
-            "sierra", // GMC pickup. "dees sierra" seen
-            "gmc wifi", // General Motors
-        )
-        private val blacklistEquals = hashSetOf(
-            "amtrak", "amtrakconnect", "cdwifi", "megabus", "westlan","wifi in de trein",
-            "svciob", "oebb", "oebb-postbus", "dpmbfree", "telekom_ice", "db ic bus", // transport
-        )
-
-        /**
-         * Given an emitter type, return the various characteristics we need to know
-         * to model it.
-         *
-         * @return The characteristics needed to model the emitter
-         */
-        fun EmitterType.getRfCharacteristics(): RfCharacteristics =
-             when (this) {
-                 WLAN2 -> characteristicsWlan24
-                 WLAN5, WLAN6 -> characteristicsWlan5 // small difference in frequency doesn't change range significantly
-                 GSM, CDMA, WCDMA, TDSCDMA, LTE, NR -> characteristicsGsm // todo: split it up by type, especially for the minimum range... and ideally min range would depend of frequency
-                 BT -> characteristicsBluetooth
-                 INVALID -> characteristicsUnknown
-            }
-
-        private val characteristicsWlan24 =
-            // For 2.4 GHz, indoor range seems to be described as about 46 meters
-            // with outdoor range about 90 meters. Set the minimum range to be about
-            // 3/4 of the indoor range and the typical range somewhere between
-            // the indoor and outdoor ranges.
-            // However we've seem really, really long range detection in rural areas
-            // so base the move distance on that.
-            RfCharacteristics(
-                20F * METERS,
-                35F * METERS,
-                300F * METERS,  // Seen pretty long detection in very rural areas
-                2
-            )
-        private val characteristicsWlan5 =
-            RfCharacteristics(
-                10F * METERS,
-                15F * METERS,
-                100F * METERS,  // Seen pretty long detection in very rural areas
-                2
-            )
-        private val characteristicsBluetooth =
-            RfCharacteristics(
-                5F * METERS,
-                2F * METERS,
-                150F * METERS, // class 1 devices can have 100 m range
-                2
-            )
-        private val characteristicsGsm =
-            RfCharacteristics(
-                100F * METERS,
-                500F * METERS,
-                100F * KM,  // In the desert towers cover large areas
-                1
-            )
-        private val characteristicsUnknown =
-            // Unknown emitter type, just throw out some values that make it unlikely that
-            // we will ever use it (require too accurate a GPS location, etc.).
-            RfCharacteristics(
-                2F * METERS,
-                50F * METERS,
-                100F * METERS,
-                99
-            )
-    }
 }
 
-// emitter types, maybe split up  a bit too much
+private val DEBUG = BuildConfig.DEBUG
+
+private const val TAG = "DejaVu RfEmitter"
+private const val METERS: Long = 1
+private const val KM = METERS * 1000
+
+// Tag/names for additional information on location records
+const val LOC_RF_ID = "rfid"
+const val LOC_RF_TYPE = "rftype"
+const val LOC_ASU = "asu"
+const val LOC_MIN_COUNT = "minCount"
+
+private val splitRegex = "[^a-z]".toRegex() // for splitting SSID into "words"
+// use hashSets for fast blacklist*.contains() check
+private val blacklistWords = hashSetOf(
+    "android", "androidap", "ipad", "phone", "motorola", "huawei", // mobile tethering
+    "mobile", // sounds like name for mobile hotspot
+    "deinbus", "ecolines", "eurolines", "fernbus", "flixbus", "muenchenlinie",
+    "postbus", "skanetrafiken", "oresundstag", "regiojet", // transport
+
+    // Per an instructional video on YouTube, recent (2014 and later) Chrysler-Fiat
+    // vehicles have a SSID of the form "Chrysler uconnect xxxxxx" where xxxxxx
+    // seems to be a hex digit string (suffix of BSSID?).
+    "uconnect", // Chrysler built vehicles
+    "chevy", // "Chevy Cruz 7774" and "Davids Chevy" seen.
+    "silverado", // GMC Silverado. "Bryces Silverado" seen, maybe move to startsWith?
+    "myvolvo", // Volvo in car WiFi, maybe move to startsWith?
+    "bmw", // examples: BMW98303 CarPlay, My BMW Hotspot 8303, DIRECT-BMW 67727
+)
+private val blacklistStartsWith = hashSetOf(
+    "moto ", "samsung galaxy", "lg aristo", // mobile tethering
+    "cellspot", // T-Mobile US portable cell based WiFi
+    "verizon", // Verizon mobile hotspot
+
+    // Per some instructional videos on YouTube, recent (2015 and later)
+    // General Motors built vehicles come with a default WiFi SSID of the
+    // form "WiFi Hotspot 1234" where the 1234 is different for each car.
+    "wifi hotspot ", // Default GM vehicle WiFi name
+
+    // Per instructional video on YouTube, Mercedes cars have and SSID of
+    // "MB WLAN nnnnn" where nnnnn is a 5 digit number.
+    "mb wlan ",
+    "westbahn ", "buswifi", "coachamerica", "disneylandresortexpress",
+    "taxilinq", "transitwirelesswifi", // transport, maybe move some to words?
+    "yicarcam", // Dashcam WiFi.
+    "my seat", // My SEAT 741
+    "vw_wlan", // VW WLAN 9266
+    "my vw", // My VW 4025
+    "my skoda", // My Skoda 3358
+    "skoda_wlan", // Skoda_WLAN_5790
+)
+private val blacklistEndsWith = hashSetOf(
+    "corvette", // Chevy Corvette. "TS Corvette" seen.
+
+    // General Motors built vehicles SSID can be changed but the recommended SSID to
+    // change to is of the form "first_name vehicle_model" (e.g. "Bryces Silverado").
+    "truck", // "Morgans Truck" and "Wally Truck" seen
+    "suburban", // Chevy/GMC Suburban. "Laura Suburban" seen
+    "terrain", // GMC Terrain. "Nelson Terrain" seen
+    "sierra", // GMC pickup. "dees sierra" seen
+    "gmc wifi", // General Motors
+)
+private val blacklistEquals = hashSetOf(
+    "amtrak", "amtrakconnect", "cdwifi", "megabus", "westlan","wifi in de trein",
+    "svciob", "oebb", "oebb-postbus", "dpmbfree", "telekom_ice", "db ic bus", // transport
+)
+
+/**
+ * Given an emitter type, return the various characteristics we need to know
+ * to model it.
+ *
+ * @return The characteristics needed to model the emitter
+ */
+fun EmitterType.getRfCharacteristics(): RfCharacteristics =
+    when (this) {
+        WLAN2 -> characteristicsWlan24
+        WLAN5, WLAN6 -> characteristicsWlan5 // small difference in frequency doesn't change range significantly
+        GSM, CDMA, WCDMA, TDSCDMA, LTE, NR -> characteristicsGsm // todo: split it up by type, especially for the minimum range... and ideally min range would depend of frequency
+        BT -> characteristicsBluetooth
+        INVALID -> characteristicsUnknown
+    }
+fun rfchar(type: EmitterType) = type.getRfCharacteristics() // todo: java crap -> convert WeightedAverage to kotlin and remove this
+private val characteristicsWlan24 =
+    // For 2.4 GHz, indoor range seems to be described as about 46 meters
+    // with outdoor range about 90 meters. Set the minimum range to be about
+    // 3/4 of the indoor range and the typical range somewhere between
+    // the indoor and outdoor ranges.
+    // However we've seem really, really long range detection in rural areas
+    // so base the move distance on that.
+    RfCharacteristics(
+        20F * METERS,
+        35F * METERS,
+        300F * METERS,  // Seen pretty long detection in very rural areas
+        2
+    )
+private val characteristicsWlan5 =
+    RfCharacteristics(
+        10F * METERS,
+        15F * METERS,
+        100F * METERS,  // Seen pretty long detection in very rural areas
+        2
+    )
+private val characteristicsBluetooth =
+    RfCharacteristics(
+        5F * METERS,
+        2F * METERS,
+        150F * METERS, // class 1 devices can have 100 m range
+        2
+    )
+private val characteristicsGsm =
+    RfCharacteristics(
+        100F * METERS,
+        500F * METERS,
+        100F * KM,  // In the desert towers cover large areas
+        1
+    )
+private val characteristicsUnknown =
+// Unknown emitter type, just throw out some values that make it unlikely that
+    // we will ever use it (require too accurate a GPS location, etc.).
+    RfCharacteristics(
+        2F * METERS,
+        50F * METERS,
+        100F * METERS,
+        99
+    )
+
+// emitter types, maybe split up a bit too much
 // (rf characteristics may depend more on frequency than on type)
 enum class EmitterType {
     INVALID,

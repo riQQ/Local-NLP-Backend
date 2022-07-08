@@ -59,7 +59,14 @@ class BackendService : LocationBackendService() {
                     intent.extras?.getBoolean(WifiManager.EXTRA_RESULTS_UPDATED)
                 else null
             if (scanSuccessful != false)
-                scope.launch { onWiFisChanged(scanSuccessful == true) }
+                scope.launch {
+                    onWiFisChanged(scanSuccessful == true)
+                    wifiScanInProgress = false // set after observations are queued for processing
+                }
+            else {
+                if (DEBUG) Log.i(TAG, "received WiFi scan results, but scan not successful")
+                wifiScanInProgress = false
+            }
         }
     }
     private var gpsLocation: Kalman? = null // Filtered GPS (because GPS is so bad on Moto G4 Play)
@@ -535,7 +542,6 @@ class BackendService : LocationBackendService() {
     @Synchronized
     private fun onWiFisChanged(definitelyNewResults: Boolean) {
         if (emitterCache == null) {
-            wifiScanInProgress = false
             return
         }
         val scanResults = wifiManager.scanResults
@@ -560,10 +566,9 @@ class BackendService : LocationBackendService() {
         }
         if (observations.isNotEmpty()) {
             if (DEBUG) Log.d(TAG, "onWiFisChanged(): " + observations.size + " observations")
-            queueForProcessing(observations/*, SystemClock.elapsedRealtime()*/)
+            queueForProcessing(observations)
         }
         oldScanResults = scanResults
-        wifiScanInProgress = false
     }
 
     // for some reason newResults == oldResults equals didn't work when testing
@@ -572,7 +577,7 @@ class BackendService : LocationBackendService() {
         for (i in 0 until size) {
             val new = get(i)
             val old = oldResults[i]
-            // compare only main attributes
+            // compare only main attributes. No change in list order and signal level is likely enough to decide it's unchanged
             if (new.BSSID == old.BSSID && new.SSID == old.SSID && new.level == old.level && new.frequency == old.frequency)
                 continue
             return false
@@ -588,10 +593,10 @@ class BackendService : LocationBackendService() {
      */
     @Synchronized
     private fun queueForProcessing(observations: Collection<Observation>) {
-        // ignore location if it is old (i.e. from previous processing period),
+        // ignore location if it is old (i.e. from a previous processing period),
         // we don't want to update emitters using outdated locations
         val loc = gpsLocation?.let {
-            if (it.timeOfUpdate > oldLocationUpdate && notNullIsland(it.location)) it.location // todo: maybe allow slightly old locations? like one processing period
+            if (it.timeOfUpdate > oldLocationUpdate && notNullIsland(it.location)) it.location
             else {
                 if (DEBUG) Log.d(TAG,"queueForProcessing() - Location too old or near null island, ${it.timeOfUpdate - oldLocationUpdate}ms")
                 null
@@ -721,7 +726,7 @@ class BackendService : LocationBackendService() {
     private fun culledEmitters(locations: Collection<Location>): Set<Location>? {
         divideInGroups(locations).maxByOrNull { it.size }?.let { result ->
             // if we only have one location, use it as long as it's not an invalid emitter
-            if (locations.size == 1 && result.single().extras.getString(RfEmitter.LOC_RF_TYPE, EmitterType.INVALID.toString()) != EmitterType.INVALID.toString()) {
+            if (locations.size == 1 && result.single().extras.getString(LOC_RF_TYPE, EmitterType.INVALID.toString()) != EmitterType.INVALID.toString()) {
                 if (DEBUG) Log.d(TAG, "culledEmitters() - got only one location, use it")
                 return result
             }
@@ -729,11 +734,11 @@ class BackendService : LocationBackendService() {
             // The RfEmitter class will have put the min count into the location
             // it provided.
             result.forEach {
-                if (result.size >= it.extras.getInt(RfEmitter.LOC_MIN_COUNT, 9999))
+                if (result.size >= it.extras.getInt(LOC_MIN_COUNT, 9999))
                     return result
             }
             if (DEBUG) Log.d(TAG, "culledEmitters() - only got ${result.size}, but " +
-                    "${result.minByOrNull { it.extras.getInt(RfEmitter.LOC_MIN_COUNT, 9999) }} are required")
+                    "${result.minByOrNull { it.extras.getInt(LOC_MIN_COUNT, 9999) }} are required")
         }
         return null
     }

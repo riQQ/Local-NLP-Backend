@@ -5,10 +5,10 @@ package org.fitchfamily.android.dejavu;
  */
 
 import static org.fitchfamily.android.dejavu.BackendServiceKt.*;
+import static org.fitchfamily.android.dejavu.RfEmitterKt.*;
 
 import android.location.Location;
 import android.os.Bundle;
-//import android.util.Log;
 
 class WeightedAverage {
     private static final String TAG="DejaVu wgtAvg";
@@ -87,8 +87,8 @@ class WeightedAverage {
         // So we are safe in computing the weight by dividing ASU by Accuracy.
         //
 
-        float asu = loc.getExtras().getInt(RfEmitter.LOC_ASU);
-        double weight = asu/ loc.getAccuracy();
+        float asu = loc.getExtras().getInt(LOC_ASU);
+        double weight = asu / loc.getAccuracy();
 
         count++;
         //Log.d(TAG,"add() entry: weight="+weight+", count="+count);
@@ -99,14 +99,28 @@ class WeightedAverage {
         // into normal distribution error statistic. We will assume our standard deviation (one
         // sigma) is half of our accuracy.
         //
-        double stdDev = loc.getAccuracy() * METER_TO_DEG/2.0;
+        double asuAdjustedAccuracy;
+        String typeString = loc.getExtras().getString(LOC_RF_TYPE);
+        if (typeString != null) {
+            EmitterType type = EmitterType.valueOf(typeString);
+            // loc.accuracy is location radius, but at least type.minimumRange
+            // asu goes from 1 (bad) to 31 (good) -> do a linear interpolation
+            // with asu 1 we have loc.accuracy, with asu 31 we are very close to minimumRange
+            // todo:
+            //  this might result in "too good" accuracy -> test and maybe adjust
+            //  do this here or when creating location? but when creating location, this will also affect creation of groups in backendService
+            //   and asu will have double effect on weight
+            asuAdjustedAccuracy = rfchar(type).getMinimumRange() +
+                    (1 - ((asu - MINIMUM_ASU) * 1.0 / MAXIMUM_ASU)) * (loc.getAccuracy() - rfchar(type).getMinimumRange());
+        } else asuAdjustedAccuracy = loc.getAccuracy();
+        double stdDev = asuAdjustedAccuracy * METER_TO_DEG/2.0;
         double cosLat = Math.max(MIN_COS, Math.cos(Math.toRadians(loc.getLatitude())));
 
-        latEst.add(loc.getLatitude(),stdDev,weight);
-        lonEst.add(loc.getLongitude(),stdDev*cosLat, weight);
+        latEst.add(loc.getLatitude(), stdDev, weight);
+        lonEst.add(loc.getLongitude(), stdDev * cosLat, weight);
 
-        timeMs = Math.max(timeMs,loc.getTime());
-        mElapsedRealtimeNanos = Math.max(mElapsedRealtimeNanos,loc.getElapsedRealtimeNanos());
+        timeMs = Math.max(timeMs, loc.getTime());
+        mElapsedRealtimeNanos = Math.max(mElapsedRealtimeNanos, loc.getElapsedRealtimeNanos());
     }
 
     public Location result() {
@@ -130,7 +144,7 @@ class WeightedAverage {
         double cosLat = Math.max(MIN_COS, Math.cos(Math.toRadians(latEst.getMean())));
         double sdMetersLon = lonEst.getStdDev() * DEG_TO_METER * cosLat;
 
-        float acc = (float) Math.max(Math.sqrt((sdMetersLat*sdMetersLat)+(sdMetersLon*sdMetersLon)),MINIMUM_BELIEVABLE_ACCURACY);
+        float acc = (float) Math.max(Math.sqrt(sdMetersLat * sdMetersLat + sdMetersLon * sdMetersLon), MINIMUM_BELIEVABLE_ACCURACY);
         location.setAccuracy(acc);
 
         Bundle extras = new Bundle();
