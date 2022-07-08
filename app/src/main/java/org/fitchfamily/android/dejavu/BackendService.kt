@@ -38,7 +38,8 @@ import org.microg.nlp.api.LocationBackendService
 import org.microg.nlp.api.MPermissionHelperActivity
 import java.util.*
 import java.util.concurrent.ConcurrentLinkedQueue
-import kotlin.collections.ArrayList
+import kotlin.math.cos
+import kotlin.math.sqrt
 
 /**
  * Created by tfitch on 8/27/17.
@@ -89,7 +90,6 @@ class BackendService : LocationBackendService() {
     private inner class WorkItem(
         var observations: Collection<Observation>,
         var loc: Location?,
-        //var time: Long // never actually used
     )
 
     private val workQueue: Queue<WorkItem> = ConcurrentLinkedQueue()
@@ -138,6 +138,10 @@ class BackendService : LocationBackendService() {
         if (wifiBroadcastReceiverRegistered) {
             unregisterReceiver(wifiBroadcastReceiver)
         }
+        // cancel jobs, and not the coroutine
+        mobileJob.cancel()
+        backgroundJob.cancel()
+        periodicProcessing.cancel()
         setGpsMonitorRunning(false)
         if (emitterCache != null) {
             emitterCache!!.close()
@@ -226,29 +230,36 @@ class BackendService : LocationBackendService() {
             }
 
             if (DEBUG) Log.d(TAG, "scanAllSensors() - starting scans")
-            if (!periodicProcessing.isActive)
-                startProcessingPeriod()
+            startProcessingPeriodIfNecessary()
             startWiFiScan()
             startMobileScan()
         }
     }
 
-    // wait until
-    private fun startProcessingPeriod() {
-        scope.launch(Dispatchers.IO) { // IO because there is a lot of wait and db access
+    private fun startProcessingPeriodIfNecessary() {
+        if (emitterCache == null) {
+            Log.d(TAG, "emitterCache is null: creating")
+            emitterCache = Cache(this)
+        }
+        if (periodicProcessing.isActive) return
+        periodicProcessing = scope.launch(Dispatchers.IO) { // IO because there is a lot of wait and db access
+            Log.d(TAG, "starting new processing period")
             delay(REPORTING_INTERVAL)
             // delay a bit more if wifi scan is still running
             if (wifiScanInProgress) {
-                Log.d(TAG, "backgroundProcessing() - Delaying endOfPeriodProcessing because WiFi scan in progress")
-                val waitUntil = nextWlanScanTime // delay at max until wifi scan should be finished
+                Log.d(TAG, "Delaying endOfPeriodProcessing because WiFi scan in progress")
+                val waitUntil = nextWlanScanTime + 1000 // delay at max until 1 sec after wifi scan should be finished
                 while (SystemClock.elapsedRealtime() < waitUntil) {
                     delay(50)
                     if (!wifiScanInProgress) break
                 }
             }
-            // delay even somewhat more if there are still observations being processed
-            if (backgroundJob.isActive)
-                delay(50) // todo: check how long completing the work usually takes
+            // delay somewhat more if there are still observations being processed
+            // actually this might be useless because processing and endOfPeriod are both @Synchronized
+            if (backgroundJob.isActive) {
+                Log.d(TAG, "Delaying endOfPeriodProcessing because background processing not yet done")
+                delay(30) // usually done in 2-20 ms
+            }
             endOfPeriodProcessing()
         }
     }
@@ -343,6 +354,9 @@ class BackendService : LocationBackendService() {
         }
         if (DEBUG) Log.d(TAG, "getMobileTowers(): getAllCellInfo() returned " + allCells.size + " records.")
         for (info in allCells) {
+            // todo: id.earfcn / arfcn added in api24, can be mapped to frequency and could gelp in range estimation
+            //  https://www.cablefree.net/wirelesstechnology/4glte/lte-carrier-frequency-earfcn/
+            //  https://en.wikipedia.org/wiki/Absolute_radio-frequency_channel_number
             if (DEBUG) Log.v(TAG, "getMobileTowers(): inputCellInfo: $info")
             if (info is CellInfoLte) {
                 val id = info.cellIdentity
@@ -534,8 +548,6 @@ class BackendService : LocationBackendService() {
         if (DEBUG) Log.d(TAG, "onWiFisChanged(): " + scanResults.size + " scan results")
         for (scanResult in scanResults) {
             val bssid = scanResult.BSSID.lowercase().replace(".", ":")
-//            val rfType = if (is5GHz(scanResult)) EmitterType.WLAN5
-//                else EmitterType.WLAN2
             val rfType = scanResult.getWifiType()
             if (DEBUG) Log.v(TAG, "rfType=$rfType, ScanResult: $scanResult")
             val observation = Observation(
@@ -554,7 +566,7 @@ class BackendService : LocationBackendService() {
         wifiScanInProgress = false
     }
 
-    // for some reason newResults == oldResults equals didn't work in a test
+    // for some reason newResults == oldResults equals didn't work when testing
     private fun List<ScanResult>.sameAs(oldResults: List<ScanResult>): Boolean {
         if (size != oldResults.size) return false
         for (i in 0 until size) {
@@ -631,13 +643,11 @@ class BackendService : LocationBackendService() {
             emitters.add(emitter)
         }
 
+        startProcessingPeriodIfNecessary()
+
         // Update emitter coverage based on GPS as needed and get the set of locations
         // the emitters are known to be seen at.
         updateEmitters(emitters, myWork.loc)
-
-        // start new processing period if necessary
-        if (!periodicProcessing.isActive)
-            startProcessingPeriod()
     }
 
     /**
@@ -646,12 +656,7 @@ class BackendService : LocationBackendService() {
      * @param emitters The emitters we have just observed
      * @param gps The GPS position at the time the observations were collected.
      */
-    @Synchronized
     private fun updateEmitters(emitters: Collection<RfEmitter>, gps: Location?) {
-        if (emitterCache == null) {
-            Log.d(TAG, "updateEmitters() - emitterCache is null: creating")
-            emitterCache = Cache(this)
-        }
         if (gps == null) return
         for (emitter in emitters) {
             emitter.updateLocation(gps)
@@ -705,8 +710,8 @@ class BackendService : LocationBackendService() {
      * are within a plausible distance of one another. A single emitters may end up
      * in multiple groups. When done, we return the largest group.
      *
-     * If we are at the extreme limit of possible coverage (movedThreshold)
-     * from two emitters then those emitters could be a distance of 2*movedThreshold apart.
+     * If we are at the extreme limit of possible coverage (maximumRange)
+     * from two emitters then those emitters could be a distance of 2*maximumRange apart.
      * So we will group the emitters based on that large distance.
      *
      * @param locations A collection of the coverages for the current observation set
@@ -714,21 +719,21 @@ class BackendService : LocationBackendService() {
      * the most believable set of coverage areas.
      */
     private fun culledEmitters(locations: Collection<Location>): Set<Location>? {
-        // since we're only interested in the first entry, things could be simplified
-        val locationGroups = divideInGroups(locations)
-        val clsList = locationGroups.sortedByDescending { it.size }
-        if (clsList.isNotEmpty()) {
-            val result: Set<Location> = clsList[0]
-
+        divideInGroups(locations).maxByOrNull { it.size }?.let { result ->
+            // if we only have one location, use it as long as it's not an invalid emitter
+            if (locations.size == 1 && result.single().extras.getString(RfEmitter.LOC_RF_TYPE, EmitterType.INVALID.toString()) != EmitterType.INVALID.toString()) {
+                if (DEBUG) Log.d(TAG, "culledEmitters() - got only one location, use it")
+                return result
+            }
             // Determine minimum count for a valid group of emitters.
             // The RfEmitter class will have put the min count into the location
             // it provided.
-            var requiredCount = 99999 // Some impossibly big number
-            for (l in result) {
-                requiredCount = l.extras.getInt(RfEmitter.LOC_MIN_COUNT, 9999).coerceAtMost(requiredCount)
+            result.forEach {
+                if (result.size >= it.extras.getInt(RfEmitter.LOC_MIN_COUNT, 9999))
+                    return result
             }
-            if (DEBUG) Log.d(TAG, "culledEmitters() - got ${result.size}, $requiredCount are required")
-            if (result.size >= requiredCount) return result
+            if (DEBUG) Log.d(TAG, "culledEmitters() - only got ${result.size}, but " +
+                    "${result.minByOrNull { it.extras.getInt(RfEmitter.LOC_MIN_COUNT, 9999) }} are required")
         }
         return null
     }
@@ -743,20 +748,13 @@ class BackendService : LocationBackendService() {
      * @param locations A set of RF emitter coverage records
      * @return A list of coverage sets.
      */
-    // todo: looks like it might be slow, depending on number of locations -> test and maybe optimize
     private fun divideInGroups(locations: Collection<Location>): List<MutableSet<Location>> {
-        val bins = ArrayList<MutableSet<Location>>(locations.size)
-
         // Create bins
+        val bins = locations.map { hashSetOf(it) }
         for (location in locations) {
-            val locGroup = HashSet<Location>()
-            locGroup.add(location)
-            bins.add(locGroup)
-        }
-        for (location in locations) {
-            for (locGroup in bins) {
-                if (locationCompatibleWithGroup(location, locGroup)) {
-                    locGroup.add(location)
+            for (locationGroup in bins) {
+                if (locationCompatibleWithGroup(location, locationGroup)) {
+                    locationGroup.add(location)
                 }
             }
         }
@@ -771,15 +769,10 @@ class BackendService : LocationBackendService() {
      * @return True if location is close to others in group
      */
     private fun locationCompatibleWithGroup(location: Location, locGroup: Set<Location>): Boolean {
-
         // If the location is within range of all current members of the
         // group, then we are compatible.
         for (other in locGroup) {
-            val testDistance = (location.distanceTo(other) -
-                    location.accuracy -
-                    other.accuracy)
-            if (testDistance > 0.0) {
-                //Log.d(TAG,"locationCompatibleWithGroup(): "+testDistance);
+            if (approximateDistance(location, other.latitude, other.longitude) > location.accuracy + other.accuracy) {
                 return false
             }
         }
@@ -794,13 +787,17 @@ class BackendService : LocationBackendService() {
      */
     @Synchronized
     private fun endOfPeriodProcessing() {
-        if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - Starting new process period.")
+        if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - end of current period.")
+        if (seenSet.isEmpty()) {
+            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - no emitters seen.")
+            oldLocationUpdate = gpsLocation?.timeOfUpdate ?: 0L
+            return
+        }
 
         // Estimate location using weighted average of the most recent
         // observations from the set of RF emitters we have seen. We cull
         // the locations based on distance from each other to reduce the
         // chance that a moved/moving emitter will be used in the computation.
-        // todo: check how fast this processing stuff is, maybe optimize if necessary
         val locations: Collection<Location>? = culledEmitters(getRfLocations(seenSet))
         val weightedAverageLocation = computePosition(locations)
         if (weightedAverageLocation != null && notNullIsland(weightedAverageLocation)) {
@@ -816,62 +813,6 @@ class BackendService : LocationBackendService() {
     }
 
     companion object {
-        private val DEBUG = BuildConfig.DEBUG
-
-        private const val TAG = "DejaVu Backend"
-        const val LOCATION_PROVIDER = "DejaVu"
-        private val myPerms = arrayOf(
-            permission.ACCESS_WIFI_STATE, permission.CHANGE_WIFI_STATE,
-            permission.ACCESS_COARSE_LOCATION, permission.ACCESS_FINE_LOCATION
-        )
-        const val DEG_TO_METER = 111225.0
-        const val METER_TO_DEG = 1.0 / DEG_TO_METER
-        const val MIN_COS = 0.01 // for things that are dividing by the cosine
-
-        // Define range of received signal strength to be used for all emitter types.
-        // Basically use the same range of values for LTE and WiFi as GSM defaults to.
-        const val MAXIMUM_ASU = 31
-        const val MINIMUM_ASU = 1
-
-        // KPH -> Meters/millisec (KPH * 1000) / (60*60*1000) -> KPH/3600
-//        const val EXPECTED_SPEED = 120.0f / 3600 // 120KPH (74 MPH)
-        private const val NULL_ISLAND_DISTANCE = 1000f
-        private val nullIsland = Location(LOCATION_PROVIDER).apply {
-            latitude = 0.0
-            longitude = 0.0
-        }
-        private const val intMax = Int.MAX_VALUE
-
-        /**
-         * Process noise for lat and lon.
-         *
-         * We do not have an accelerometer, so process noise ought to be large enough
-         * to account for reasonable changes in vehicle speed. Assume 0 to 100 kph in
-         * 5 seconds (20kph/sec ~= 5.6 m/s**2 acceleration). Or the reverse, 6 m/s**2
-         * is about 0-130 kph in 6 seconds
-         */
-        private const val GPS_COORDINATE_NOISE = 3.0
-//        private const val POSITION_COORDINATE_NOISE = 6.0
-        private var instance: BackendService? = null
-
-        // Stuff for scanning WiFi APs
-        private val wifiBroadcastFilter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
-
-        //
-        // Scanning and reporting are resource intensive operations, so we throttle
-        // them. Ideally the intervals should be multiples of one another.
-        //
-        // We are triggered by external events, so we really don't run periodically.
-        // So these numbers are the minimum time. Actual will be at least that based
-        // on when we get GPS locations and/or update requests from microG/UnifiedNlp.
-        //
-        // values are milliseconds
-        private const val REPORTING_INTERVAL: Long = 3500 // a bit increased from original
-        private const val MOBILE_SCAN_INTERVAL = REPORTING_INTERVAL / 2 - 100 // scans are rather fast, but are likely to update slowly
-        private const val WLAN_SCAN_INTERVAL = REPORTING_INTERVAL - 100 // scans are slow, ca 2.5 s, and a shorter interval does not make sense
-        //
-        // Other public methods
-        //
         /**
          * Called by Android when a GPS location reports becomes available.
          *
@@ -881,42 +822,95 @@ class BackendService : LocationBackendService() {
             //Log.d(TAG, "instanceGpsLocationUpdated() entry.");
             instance?.onGpsChanged(locReport)
         }
-
-        /**
-         * Check if location too close to null island to be real
-         *
-         * @param loc The location to be checked
-         * @return boolean True if away from lat,lon of 0,0
-         */
-        fun notNullIsland(loc: Location): Boolean {
-            return nullIsland.distanceTo(loc) > NULL_ISLAND_DISTANCE
-        }
-
-        /**
-         * This seems like it ought to be in ScanResult but I get an unidentified error
-         * @param sr Result from a WLAN/WiFi scan
-         * @return True if in the 5GHZ range
-         */
-        fun is5GHz(sr: ScanResult): Boolean {
-            val freq = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
-                && sr.channelWidth != ScanResult.CHANNEL_WIDTH_20MHZ)
-                    sr.centerFreq0
-                else
-                    sr.frequency
-            return freq > 2500
-        }
-
-        // todo: really care about difference between wifi 5 and 6?
-        //  only relevant if range is different!
-        fun ScanResult.getWifiType(): EmitterType =
-            when {
-                frequency < 3000 -> EmitterType.WLAN2 // 2401 - 2495 MHz
-                frequency < 5945 -> EmitterType.WLAN5 // 5030 - 5990 MHz, but at 5945 WLAN6 starts
-                frequency > 6000 -> EmitterType.WLAN6 // 5945 - 7125
-                frequency % 10 == 5 -> EmitterType.WLAN6 // in the overlapping range, WLAN6 frequencies end with 5
-                    // except of 5945... which is on both regions -> how to tell apart?
-                else -> EmitterType.WLAN5
-            }
-
     }
+
 }
+
+private val DEBUG = BuildConfig.DEBUG
+
+private const val TAG = "DejaVu Backend"
+const val LOCATION_PROVIDER = "DejaVu"
+private val myPerms = arrayOf(
+    permission.ACCESS_WIFI_STATE, permission.CHANGE_WIFI_STATE,
+    permission.ACCESS_COARSE_LOCATION, permission.ACCESS_FINE_LOCATION
+)
+// DEG_TO_METER is only approximate, but an error of 1% is acceptable
+//  for latitude it depends on latitude, from ~110500 (equator) ~111700 (poles)
+//  for longitude at equator it's ~111300
+const val DEG_TO_METER = 111225.0
+const val METER_TO_DEG = 1.0 / DEG_TO_METER
+const val MIN_COS = 0.01 // for things that are dividing by the cosine
+
+// Define range of received signal strength to be used for all emitter types.
+// Basically use the same range of values for LTE and WiFi as GSM defaults to.
+const val MAXIMUM_ASU = 31
+const val MINIMUM_ASU = 1
+
+// KPH -> Meters/millisec (KPH * 1000) / (60*60*1000) -> KPH/3600
+//        const val EXPECTED_SPEED = 120.0f / 3600 // 120KPH (74 MPH)
+private const val NULL_ISLAND_DISTANCE = 1000f
+private val nullIsland = Location(LOCATION_PROVIDER).apply {
+    latitude = 0.0
+    longitude = 0.0
+}
+private const val intMax = Int.MAX_VALUE
+
+/**
+ * Process noise for lat and lon.
+ *
+ * We do not have an accelerometer, so process noise ought to be large enough
+ * to account for reasonable changes in vehicle speed. Assume 0 to 100 kph in
+ * 5 seconds (20kph/sec ~= 5.6 m/s**2 acceleration). Or the reverse, 6 m/s**2
+ * is about 0-130 kph in 6 seconds
+ */
+private const val GPS_COORDINATE_NOISE = 3.0
+//private const val POSITION_COORDINATE_NOISE = 6.0
+private var instance: BackendService? = null
+
+// Stuff for scanning WiFi APs
+private val wifiBroadcastFilter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)
+
+//
+// Scanning and reporting are resource intensive operations, so we throttle
+// them. Ideally the intervals should be multiples of one another.
+//
+// We are triggered by external events, so we really don't run periodically.
+// So these numbers are the minimum time. Actual will be at least that based
+// on when we get GPS locations and/or update requests from microG/UnifiedNlp.
+//
+// values are milliseconds
+private const val REPORTING_INTERVAL: Long = 3500 // a bit increased from original
+private const val MOBILE_SCAN_INTERVAL = REPORTING_INTERVAL / 2 - 100 // scans are rather fast, but are likely to update slowly
+private const val WLAN_SCAN_INTERVAL = REPORTING_INTERVAL - 100 // scans are slow, ca 2.5 s, and a shorter interval does not make sense
+
+// much faster than location.distanceTo(otherLocation)
+// and less than 0.1% difference the small (< 1°) distances we're interested in
+// (much more inaccurate if latitude changes
+fun approximateDistance(loc1: Location, lat2: Double, lon2: Double): Double {
+    val distLat = (loc1.latitude - lat2) * DEG_TO_METER
+    val distLon = (loc1.longitude - lon2) * DEG_TO_METER * cos(Math.toRadians(loc1.latitude))
+    return sqrt(distLat * distLat + distLon * distLon)
+}
+
+/**
+ * Check if location too close to null island to be real
+ *
+ * @param loc The location to be checked
+ * @return boolean True if away from lat,lon of 0,0
+ */
+fun notNullIsland(loc: Location): Boolean {
+    return nullIsland.distanceTo(loc) > NULL_ISLAND_DISTANCE
+}
+
+// wifiManager.is6GHzBandSupported might be called to check whether it can be WLAN6
+// but wifiManager.is5GHzBandSupported incorrectly returns no on my device, so better don't trust it
+// and actually there might be a better way of doing this...
+fun ScanResult.getWifiType(): EmitterType =
+    when {
+        frequency < 3000 -> EmitterType.WLAN2 // 2401 - 2495 MHz
+        // 5945 can be WLAN5 and WLAN6, simply don't bother and assume WLAN5 for now
+        frequency <= 5945 -> EmitterType.WLAN5 // 5030 - 5990 MHz, but at 5945 WLAN6 starts
+        frequency > 6000 -> EmitterType.WLAN6 // 5945 - 7125
+        frequency % 10 == 5 -> EmitterType.WLAN6 // in the overlapping range, WLAN6 frequencies end with 5
+        else -> EmitterType.WLAN5
+    }

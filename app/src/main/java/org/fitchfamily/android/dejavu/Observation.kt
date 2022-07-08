@@ -36,15 +36,15 @@ import android.os.SystemClock
  */
 data class Observation(
     val identification: RfIdentification,
-    var asu: Int = BackendService.MINIMUM_ASU,
+    var asu: Int = MINIMUM_ASU,
     val note: String = "",
 ) {
     internal constructor(id: String, type: EmitterType, asu: Int) : this(RfIdentification(id, type), asu)
     internal constructor(id: String, type: EmitterType, asu: Int, note: String) : this(RfIdentification(id, type), asu, note)
 
     init {
-        asu = asu.coerceAtLeast(BackendService.MINIMUM_ASU)
-            .coerceAtMost(BackendService.MAXIMUM_ASU)
+        asu = asu.coerceAtLeast(MINIMUM_ASU)
+            .coerceAtMost(MAXIMUM_ASU)
     }
 
     val lastUpdateTimeMs = System.currentTimeMillis()

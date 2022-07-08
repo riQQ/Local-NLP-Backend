@@ -86,11 +86,11 @@ data class BoundingBox(
      * @param r_ew The distance from the center to the east (or west) edge.
      */
     private fun update(lat: Double, lon: Double, r_ns: Float, r_ew: Float): Boolean {
-        val locNorth = lat + r_ns * BackendService.METER_TO_DEG
-        val locSouth = lat - r_ns * BackendService.METER_TO_DEG
+        val locNorth = lat + r_ns * METER_TO_DEG
+        val locSouth = lat - r_ns * METER_TO_DEG
         var cosLat = cos(Math.toRadians(lat))
-        val locEast = lon + r_ew * BackendService.METER_TO_DEG / cosLat
-        val locWest = lon - r_ew * BackendService.METER_TO_DEG / cosLat
+        val locEast = lon + r_ew * METER_TO_DEG / cosLat
+        val locWest = lon - r_ew * METER_TO_DEG / cosLat
 
         // return false if emitter bounding box already included in this bounding box
         if (!(locNorth > north || locSouth < south || locEast > east || locWest < west))
@@ -104,9 +104,9 @@ data class BoundingBox(
 
         center_lat = (north + south) / 2.0
         center_lon = (east + west) / 2.0
-        radius_ns = ((north - center_lat) * BackendService.DEG_TO_METER)
-        cosLat = cos(Math.toRadians(center_lat)).coerceAtLeast(BackendService.MIN_COS)
-        radius_ew = (east - center_lon) * BackendService.DEG_TO_METER * cosLat
+        radius_ns = ((north - center_lat) * DEG_TO_METER)
+        cosLat = cos(Math.toRadians(center_lat)).coerceAtLeast(MIN_COS)
+        radius_ew = (east - center_lon) * DEG_TO_METER * cosLat
         radius = sqrt(radius_ns * radius_ns + radius_ew * radius_ew)
         return true
     }
@@ -138,10 +138,10 @@ data class BoundingBox(
         if (rslt) {
             center_lat = (north + south) / 2.0
             center_lon = (east + west) / 2.0
-            radius_ns = ((north - center_lat) * BackendService.DEG_TO_METER)
-            val cosLat = cos(Math.toRadians(center_lat)).coerceAtLeast(BackendService.MIN_COS)
+            radius_ns = ((north - center_lat) * DEG_TO_METER)
+            val cosLat = cos(Math.toRadians(center_lat)).coerceAtLeast(MIN_COS)
             radius_ew =
-                ((east - center_lon) * BackendService.DEG_TO_METER / cosLat)
+                ((east - center_lon) * DEG_TO_METER / cosLat)
             radius = sqrt(radius_ns * radius_ns + radius_ew * radius_ew)
         }
         return rslt

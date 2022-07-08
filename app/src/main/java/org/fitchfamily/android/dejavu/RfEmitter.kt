@@ -260,13 +260,6 @@ class RfEmitter(val type: EmitterType, val id: String) {
         }
     }
 
-    // simple approximate distance calculation, accurate enough if locations are close together
-    private fun approximateDistance(loc1: Location, lat2: Double, lon2: Double): Double {
-        val distLat = (loc1.latitude - lat2) * BackendService.DEG_TO_METER
-        val distLon = (loc1.longitude - lon2) * BackendService.DEG_TO_METER * cos(Math.toRadians(loc1.latitude))
-        return sqrt(distLat * distLat + distLon * distLon)
-    }
-
     /**
      * User facing location value. Differs from internal one in that we don't report
      * locations that are guarded due to being new or moved.
@@ -287,7 +280,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
             val location = generateLocation() ?: return null
 
             // If we are unbelievably close to null island, don't report location
-            if (!BackendService.notNullIsland(location)) return null
+            if (!notNullIsland(location)) return null
 
             // Time tags based on time of most recent observation
             location.time = observation.lastUpdateTimeMs
@@ -310,7 +303,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
      */
     private fun generateLocation(): Location? {
         val cov = coverage ?: return null
-        val location = Location(BackendService.LOCATION_PROVIDER)
+        val location = Location(LOCATION_PROVIDER)
         location.latitude = cov.center_lat
         location.longitude = cov.center_lon
 
@@ -485,6 +478,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
             "amtrak", "amtrakconnect", "cdwifi", "megabus", "westlan","wifi in de trein",
             "svciob", "oebb", "oebb-postbus", "dpmbfree", "telekom_ice", "db ic bus", // transport
         )
+
         /**
          * Given an emitter type, return the various characteristics we need to know
          * to model it.
@@ -494,8 +488,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
         fun EmitterType.getRfCharacteristics(): RfCharacteristics =
              when (this) {
                  WLAN2 -> characteristicsWlan24
-                 WLAN5, WLAN6 -> characteristicsWlan5
-                 GSM, CDMA, WCDMA, TDSCDMA, LTE, NR -> characteristicsMobile
+                 WLAN5, WLAN6 -> characteristicsWlan5 // small difference in frequency doesn't change range significantly
+                 GSM, CDMA, WCDMA, TDSCDMA, LTE, NR -> characteristicsGsm // todo: split it up by type, especially for the minimum range... and ideally min range would depend of frequency
                  BT -> characteristicsBluetooth
                  INVALID -> characteristicsUnknown
             }
@@ -509,14 +503,14 @@ class RfEmitter(val type: EmitterType, val id: String) {
             // so base the move distance on that.
             RfCharacteristics(
                 20F * METERS,
-                50F * METERS,
+                35F * METERS,
                 300F * METERS,  // Seen pretty long detection in very rural areas
                 2
             )
         private val characteristicsWlan5 =
             RfCharacteristics(
-                13F * METERS,
-                30F * METERS,
+                10F * METERS,
+                15F * METERS,
                 100F * METERS,  // Seen pretty long detection in very rural areas
                 2
             )
@@ -527,7 +521,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 150F * METERS, // class 1 devices can have 100 m range
                 2
             )
-        private val characteristicsMobile =
+        private val characteristicsGsm =
             RfCharacteristics(
                 100F * METERS,
                 500F * METERS,
@@ -546,9 +540,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
     }
 }
 
-// emitter type is stored as ordinal in database
-// so NEVER change the order! // todo: NO! this is a bad idea
-// when adding new types,do it below the last one
+// emitter types, maybe split up  a bit too much
+// (rf characteristics may depend more on frequency than on type)
 enum class EmitterType {
     INVALID,
     WLAN2,

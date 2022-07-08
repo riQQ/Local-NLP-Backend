@@ -4,6 +4,8 @@ package org.fitchfamily.android.dejavu;
  * Created by tfitch on 10/30/17.
  */
 
+import static org.fitchfamily.android.dejavu.BackendServiceKt.*;
+
 import android.location.Location;
 import android.os.Bundle;
 //import android.util.Log;
@@ -97,8 +99,8 @@ class WeightedAverage {
         // into normal distribution error statistic. We will assume our standard deviation (one
         // sigma) is half of our accuracy.
         //
-        double stdDev = loc.getAccuracy()*BackendService.METER_TO_DEG/2.0;
-        double cosLat = Math.max(BackendService.MIN_COS, Math.cos(Math.toRadians(loc.getLatitude())));
+        double stdDev = loc.getAccuracy() * METER_TO_DEG/2.0;
+        double cosLat = Math.max(MIN_COS, Math.cos(Math.toRadians(loc.getLatitude())));
 
         latEst.add(loc.getLatitude(),stdDev,weight);
         lonEst.add(loc.getLongitude(),stdDev*cosLat, weight);
@@ -111,7 +113,7 @@ class WeightedAverage {
         if (count < 1)
             return null;
 
-        final Location location = new Location(BackendService.LOCATION_PROVIDER);
+        final Location location = new Location(LOCATION_PROVIDER);
 
         location.setTime(timeMs);
         location.setElapsedRealtimeNanos(mElapsedRealtimeNanos);
@@ -124,9 +126,9 @@ class WeightedAverage {
         // We calculate North-South and East-West independently, convert to a
         // circular radius by finding the length of the diagonal.
         //
-        double sdMetersLat = latEst.getStdDev() * BackendService.DEG_TO_METER;
-        double cosLat = Math.max(BackendService.MIN_COS, Math.cos(Math.toRadians(latEst.getMean())));
-        double sdMetersLon = lonEst.getStdDev() * BackendService.DEG_TO_METER * cosLat;
+        double sdMetersLat = latEst.getStdDev() * DEG_TO_METER;
+        double cosLat = Math.max(MIN_COS, Math.cos(Math.toRadians(latEst.getMean())));
+        double sdMetersLon = lonEst.getStdDev() * DEG_TO_METER * cosLat;
 
         float acc = (float) Math.max(Math.sqrt((sdMetersLat*sdMetersLat)+(sdMetersLon*sdMetersLon)),MINIMUM_BELIEVABLE_ACCURACY);
         location.setAccuracy(acc);
