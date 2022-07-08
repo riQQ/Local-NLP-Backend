@@ -211,7 +211,7 @@ class BackendService : LocationBackendService() {
                 if (gpsLocation == null)
                     gpsLocation = Kalman(update, GPS_COORDINATE_NOISE)
                 else
-                    gpsLocation!!.update(update)
+                    gpsLocation?.update(update)
                 scanAllSensors()
             } else
                 Log.d(TAG, "onGpsChanged() - Permissions not granted, soft fail.")
@@ -399,7 +399,7 @@ class BackendService : LocationBackendService() {
                     ) ?: alternativeMnc ?: continue
 
                 // CellIdentityGsm accessors all state Integer.MAX_VALUE is returned for unknown values.
-                // analysis of results show frequent invalid LAC of 0 messing with results
+                // analysis of results show frequent (invalid!) LAC of 0 messing with results, so ignore it
                 if (id.lac == intMax || id.lac == 0 || id.cid == intMax)
                     continue
 
@@ -849,10 +849,6 @@ const val MINIMUM_ASU = 1
 // KPH -> Meters/millisec (KPH * 1000) / (60*60*1000) -> KPH/3600
 //        const val EXPECTED_SPEED = 120.0f / 3600 // 120KPH (74 MPH)
 private const val NULL_ISLAND_DISTANCE = 1000f
-private val nullIsland = Location(LOCATION_PROVIDER).apply {
-    latitude = 0.0
-    longitude = 0.0
-}
 private const val intMax = Int.MAX_VALUE
 
 /**
@@ -899,7 +895,7 @@ fun approximateDistance(loc1: Location, lat2: Double, lon2: Double): Double {
  * @return boolean True if away from lat,lon of 0,0
  */
 fun notNullIsland(loc: Location): Boolean {
-    return nullIsland.distanceTo(loc) > NULL_ISLAND_DISTANCE
+    return approximateDistance(loc, 0.0, 0.0) > NULL_ISLAND_DISTANCE
 }
 
 // wifiManager.is6GHzBandSupported might be called to check whether it can be WLAN6
