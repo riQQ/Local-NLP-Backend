@@ -299,7 +299,7 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
                     COL_RAD_NS + ", " +
                     COL_RAD_EW + ", " +
                     COL_NOTE + ") " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?);")
+                    "VALUES (?, ?, ?, ?, ?, ?, ?);")
         )
         sqlSampleUpdate = database.compileStatement(
             ("UPDATE " +
