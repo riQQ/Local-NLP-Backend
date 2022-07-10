@@ -54,17 +54,18 @@ class BackendService : LocationBackendService() {
     private val wifiManager: WifiManager by lazy { applicationContext.getSystemService(WIFI_SERVICE) as WifiManager }
     private val wifiBroadcastReceiver: BroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            // don't call onWiFisChanged() if scan wasn't successful
             val scanSuccessful = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
                     intent.extras?.getBoolean(WifiManager.EXTRA_RESULTS_UPDATED)
                 else null
+            // don't call onWiFisChanged() if scan wasn't successful
             if (scanSuccessful != false)
                 scope.launch {
                     onWiFisChanged(scanSuccessful == true)
+                    if (DEBUG) Log.i(TAG, "onReceive: gathered WiFi scan results, to be processed in background")
                     wifiScanInProgress = false // set after observations are queued for processing
                 }
             else {
-                if (DEBUG) Log.i(TAG, "received WiFi scan results, but scan not successful")
+                if (DEBUG) Log.i(TAG, "onReceive: received WiFi scan result intent, but scan not successful")
                 wifiScanInProgress = false
             }
         }
@@ -245,16 +246,16 @@ class BackendService : LocationBackendService() {
 
     private fun startProcessingPeriodIfNecessary() {
         if (emitterCache == null) {
-            Log.d(TAG, "emitterCache is null: creating")
+            if (DEBUG) Log.d(TAG, "emitterCache is null: creating")
             emitterCache = Cache(this)
         }
         if (periodicProcessing.isActive) return
         periodicProcessing = scope.launch(Dispatchers.IO) { // IO because there is a lot of wait and db access
-            Log.d(TAG, "starting new processing period")
+            if (DEBUG) Log.d(TAG, "starting new processing period")
             delay(REPORTING_INTERVAL)
             // delay a bit more if wifi scan is still running
             if (wifiScanInProgress) {
-                Log.d(TAG, "Delaying endOfPeriodProcessing because WiFi scan in progress")
+                if (DEBUG) Log.d(TAG, "Delaying endOfPeriodProcessing because WiFi scan in progress")
                 val waitUntil = nextWlanScanTime + 1000 // delay at max until 1 sec after wifi scan should be finished
                 while (SystemClock.elapsedRealtime() < waitUntil) {
                     delay(50)
@@ -264,7 +265,7 @@ class BackendService : LocationBackendService() {
             // delay somewhat more if there are still observations being processed
             // actually this might be useless because processing and endOfPeriod are both @Synchronized
             if (backgroundJob.isActive) {
-                Log.d(TAG, "Delaying endOfPeriodProcessing because background processing not yet done")
+                if (DEBUG) Log.d(TAG, "Delaying endOfPeriodProcessing because background processing not yet done")
                 delay(30) // usually done in 2-20 ms
             }
             endOfPeriodProcessing()
