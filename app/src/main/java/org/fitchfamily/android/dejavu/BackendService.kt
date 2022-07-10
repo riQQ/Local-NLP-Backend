@@ -559,7 +559,8 @@ class BackendService : LocationBackendService() {
                 scanResult.BSSID.lowercase().replace(".", ":"),
                 scanResult.getWifiType(),
                 WifiManager.calculateSignalLevel(scanResult.level, MAXIMUM_ASU),
-                scanResult.SSID
+                scanResult.SSID,
+                scanResult.timestamp * 1000, // timestamp is elapsedRealtime when WiFi was last seen, in microseconds
             )
             observations.add(observation)
         }

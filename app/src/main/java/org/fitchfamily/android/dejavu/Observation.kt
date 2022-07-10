@@ -38,9 +38,11 @@ data class Observation(
     val identification: RfIdentification,
     var asu: Int = MINIMUM_ASU,
     val note: String = "",
+    val elapsedRealtimeNanos: Long = SystemClock.elapsedRealtimeNanos(),
 ) {
     internal constructor(id: String, type: EmitterType, asu: Int) : this(RfIdentification(id, type), asu)
-    internal constructor(id: String, type: EmitterType, asu: Int, note: String) : this(RfIdentification(id, type), asu, note)
+    internal constructor(id: String, type: EmitterType, asu: Int, note: String, realtimeNanos: Long) :
+            this(RfIdentification(id, type), asu, note, realtimeNanos)
 
     init {
         asu = asu.coerceAtLeast(MINIMUM_ASU)
@@ -48,6 +50,5 @@ data class Observation(
     }
 
     val lastUpdateTimeMs = System.currentTimeMillis()
-    val elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
 
 }
