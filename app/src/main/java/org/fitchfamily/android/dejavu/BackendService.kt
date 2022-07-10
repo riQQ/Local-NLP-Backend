@@ -61,11 +61,11 @@ class BackendService : LocationBackendService() {
             if (scanSuccessful != false)
                 scope.launch {
                     onWiFisChanged(scanSuccessful == true)
-                    if (DEBUG) Log.i(TAG, "onReceive: gathered WiFi scan results, to be processed in background")
+                    if (DEBUG) Log.d(TAG, "onReceive: gathered WiFi scan results, to be processed in background")
                     wifiScanInProgress = false // set after observations are queued for processing
                 }
             else {
-                if (DEBUG) Log.i(TAG, "onReceive: received WiFi scan result intent, but scan not successful")
+                if (DEBUG) Log.d(TAG, "onReceive: received WiFi scan result intent, but scan not successful")
                 wifiScanInProgress = false
             }
         }
@@ -548,18 +548,16 @@ class BackendService : LocationBackendService() {
         val scanResults = wifiManager.scanResults
         if (!definitelyNewResults && scanResults.sameAs(oldScanResults)) {
             // don't continue if scan results didn't change
-            if (DEBUG) Log.d(TAG, "onWiFisChanged(): scan results are the same as old results")
+            if (DEBUG) Log.d(TAG, "onWiFisChanged(): scan results are the same as previous results, discarding")
             return
         }
         val observations = hashSetOf<Observation>()
         if (DEBUG) Log.d(TAG, "onWiFisChanged(): " + scanResults.size + " scan results")
         for (scanResult in scanResults) {
-            val bssid = scanResult.BSSID.lowercase().replace(".", ":")
-            val rfType = scanResult.getWifiType()
-            if (DEBUG) Log.v(TAG, "rfType=$rfType, ScanResult: $scanResult")
+            if (DEBUG) Log.v(TAG, "rfType=${scanResult.getWifiType()}, ScanResult: $scanResult")
             val observation = Observation(
-                bssid,
-                rfType,
+                scanResult.BSSID.lowercase().replace(".", ":"),
+                scanResult.getWifiType(),
                 WifiManager.calculateSignalLevel(scanResult.level, MAXIMUM_ASU),
                 scanResult.SSID
             )

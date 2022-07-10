@@ -44,10 +44,6 @@ import kotlin.math.abs
 class RfEmitter(val type: EmitterType, val id: String) {
     internal constructor(identification: RfIdentification) : this(identification.rfType, identification.rfId)
 
-    internal constructor(observation: Observation) : this(observation.identification.rfType, observation.identification.rfId) {
-        lastObservation = observation
-    }
-
     internal constructor(identification: RfIdentification, emitterInfo: EmitterInfo) : this(identification.rfType, identification.rfId, emitterInfo)
 
     internal constructor(type: EmitterType, id: String, emitterInfo: EmitterInfo) : this(type, id) {
@@ -61,8 +57,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
     }
 
     private val ourCharacteristics = type.getRfCharacteristics()
-    var coverage: BoundingBox? = null // null for new or blacklisted emitters
-        private set
+    private var coverage: BoundingBox? = null // null for new or blacklisted emitters
     var note: String = ""
         set(value) {
             if (field == value)
@@ -76,11 +71,10 @@ class RfEmitter(val type: EmitterType, val id: String) {
             field = value
             note = value?.note ?: ""
         }
-    var status: EmitterStatus = EmitterStatus.STATUS_UNKNOWN
-        private set
+    private var status: EmitterStatus = EmitterStatus.STATUS_UNKNOWN
 
     val uniqueId: String get() = rfIdentification.uniqueId
-    val rfIdentification: RfIdentification get() = RfIdentification(id, type)
+    val rfIdentification: RfIdentification = RfIdentification(id, type)
     val lat: Double get() = coverage?.center_lat ?: 0.0
     val lon: Double get() = coverage?.center_lon ?: 0.0
     private val radius: Double get() = coverage?.radius ?: 0.0
@@ -201,17 +195,17 @@ class RfEmitter(val type: EmitterType, val id: String) {
      */
     fun updateLocation(gpsLoc: Location) {
         if (status == EmitterStatus.STATUS_BLACKLISTED) return
-        val cov = coverage // avoid potential weird issues with null value
 
-        // don't update location if there is more than 30 sec difference between last observation and gps location
-        // this should not happen, but can occur if a wifi scan takes vary long to complete
+        // don't update location if there is more than 10 sec difference between last observation
+        // and gps location (because we might have moved considerably during this time)
+        // this should not happen, but could occur e.g. if a wifi scan takes very long to complete
         if (abs((lastObservation?.elapsedRealtimeNanos ?: 0L) - gpsLoc.elapsedRealtimeNanos) > 10 * 1e9) {
             if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location and observation differ by more than 10s: ${(lastObservation?.elapsedRealtimeNanos ?: 0L) - gpsLoc.elapsedRealtimeNanos}ms")
-            // should still be ok for mobile towers, todo: decide whether to care about this... as the time difference should not be more than 1 period anyway
             return
         }
 
         // don't update coverage if gps too inaccurate
+        val cov = coverage
         if (gpsLoc.accuracy > ourCharacteristics.requiredGpsAccuracy
                 // except if distance is really large and we're sure emitter should be out of range
                 //   this allows updating emitters that are found unbelievably far
@@ -225,7 +219,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
         if (cov == null) {
             if (DEBUG) Log.d(TAG, "updateLocation($logString) - Emitter is new.")
             coverage = BoundingBox(gpsLoc.latitude, gpsLoc.longitude)
-            changeStatus(EmitterStatus.STATUS_NEW, "updateLocation('$logString') New")
+            changeStatus(EmitterStatus.STATUS_NEW, "updateLocation($logString) New")
             return
         }
 
@@ -233,9 +227,9 @@ class RfEmitter(val type: EmitterType, val id: String) {
         if (cov.update(gpsLoc.latitude, gpsLoc.longitude)) {
             // Bounding box has increased, see if it is now unbelievably large
             if (cov.radius > ourCharacteristics.maximumRange)
-                changeStatus(EmitterStatus.STATUS_BLACKLISTED, "updateLocation('$logString') too large radius")
+                changeStatus(EmitterStatus.STATUS_BLACKLISTED, "updateLocation($logString) too large radius")
             else
-                changeStatus(EmitterStatus.STATUS_CHANGED, "updateLocation('$logString') BBOX update")
+                changeStatus(EmitterStatus.STATUS_CHANGED, "updateLocation($logString) BBOX update")
         }
     }
 
@@ -352,7 +346,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
 
     /**
      * Our status can only make a small set of allowed transitions. Basically a simple
-     * state machine. To assure our transistions are all legal, this routine is used for
+     * state machine. To assure our transitions are all legal, this routine is used for
      * all changes.
      *
      * @param newStatus The desired new status (state)
