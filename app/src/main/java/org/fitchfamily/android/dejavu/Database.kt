@@ -440,8 +440,8 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
                     val info = EmitterInfo(
                         latitude = cursor.getDouble(1),
                         longitude = cursor.getDouble(2),
-                        radius_ns = cursor.getFloat(3),
-                        radius_ew = cursor.getFloat(4),
+                        radius_ns = cursor.getDouble(3),
+                        radius_ew = cursor.getDouble(4),
                         note = cursor.getString(5) ?: ""
                     )
                     val result = RfEmitter(
@@ -483,8 +483,8 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
                 val ei = EmitterInfo(
                     latitude = cursor.getDouble(0),
                     longitude = cursor.getDouble(1),
-                    radius_ns = cursor.getFloat(2),
-                    radius_ew = cursor.getFloat(3),
+                    radius_ns = cursor.getDouble(2),
+                    radius_ew = cursor.getDouble(3),
                     note = cursor.getString(4) ?: ""
                 )
                 RfEmitter(identification, ei)
@@ -518,7 +518,7 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
 class EmitterInfo(
     val latitude: Double,
     val longitude: Double,
-    val radius_ns: Float,
-    val radius_ew: Float,
+    val radius_ns: Double,
+    val radius_ew: Double,
     val note: String
 )

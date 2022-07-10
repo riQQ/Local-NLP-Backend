@@ -20,18 +20,23 @@ package org.fitchfamily.android.dejavu
 */
 
 import android.location.Location
+import java.lang.Math.toRadians
 import kotlin.math.cos
 import kotlin.math.sqrt
 
 /**
  * Created by tfitch on 9/28/17.
  */
-data class BoundingBox(
-    var center_lat: Double = 0.0,
-    var center_lon: Double = 0.0,
-    var radius_ns: Double = 0.0,
+class BoundingBox() {
+    var center_lat: Double = 0.0
+        private set
+    var center_lon: Double = 0.0
+        private set
+    var radius_ns: Double = 0.0
+        private set
     var radius_ew: Double = 0.0
-    ) {
+        private set
+
     var north = -91.0 // Impossibly south
         private set
     var south = 91.0 // Impossibly north
@@ -40,75 +45,25 @@ data class BoundingBox(
         private set
     var west = 181.0 // Impossibly east
         private set
-    var radius = sqrt(radius_ns * radius_ns + radius_ew * radius_ew)
+    var radius = 0.0
         private set
 
-    constructor(loc: Location) : this() {
-        update(loc)
-    }
-
-    constructor(lat: Double, lon: Double, radius: Float) : this() {
-        update(lat, lon, radius)
-    }
-
     constructor(info: EmitterInfo) : this() {
-        update(info.latitude, info.longitude, info.radius_ns, info.radius_ew)
-    }
-
-    /**
-     * Expand, if needed, the bounding box to include the coverage area
-     * implied by a location.
-     * @param loc A record describing the coverage of an RF emitter.
-     */
-    private fun update(loc: Location): Boolean {
-        return update(loc.latitude, loc.longitude, loc.accuracy)
-    }
-
-    /**
-     * Expand bounding box to include an emitter at a lat/lon with a
-     * specified radius.
-     *
-     * @param lat The center latitude for the coverage area.
-     * @param lon The center longitude for the coverage area.
-     * @param radius The radius of the coverage area.
-     */
-    private fun update(lat: Double, lon: Double, radius: Float): Boolean {
-        return update(lat, lon, radius, radius)
-    }
-
-    /**
-     * Expand bounding box to include an emitter at a lat/lon with a
-     * specified radius.
-     *
-     * @param lat The center latitude for the coverage area.
-     * @param lon The center longitude for the coverage area.
-     * @param r_ns The distance from the center to the north (or south) edge.
-     * @param r_ew The distance from the center to the east (or west) edge.
-     */
-    private fun update(lat: Double, lon: Double, r_ns: Float, r_ew: Float): Boolean {
-        val locNorth = lat + r_ns * METER_TO_DEG
-        val locSouth = lat - r_ns * METER_TO_DEG
-        var cosLat = cos(Math.toRadians(lat))
-        val locEast = lon + r_ew * METER_TO_DEG / cosLat
-        val locWest = lon - r_ew * METER_TO_DEG / cosLat
-
-        // return false if emitter bounding box already included in this bounding box
-        if (!(locNorth > north || locSouth < south || locEast > east || locWest < west))
-            return false
-
-        // set new bounding box edges
-        north = north.coerceAtLeast(locNorth)
-        south = south.coerceAtMost(locSouth)
-        east = east.coerceAtLeast(locEast)
-        west = west.coerceAtMost(locWest)
-
-        center_lat = (north + south) / 2.0
-        center_lon = (east + west) / 2.0
-        radius_ns = ((north - center_lat) * DEG_TO_METER)
-        cosLat = cos(Math.toRadians(center_lat)).coerceAtLeast(MIN_COS)
-        radius_ew = (east - center_lon) * DEG_TO_METER * cosLat
+        center_lat = info.latitude
+        center_lon = info.longitude
+        radius_ns = info.radius_ns
+        radius_ew = info.radius_ew
         radius = sqrt(radius_ns * radius_ns + radius_ew * radius_ew)
-        return true
+
+        north = center_lat + radius_ns * METER_TO_DEG
+        south = center_lat - radius_ns * METER_TO_DEG
+        val cosLat = cos(toRadians(center_lat)).coerceAtLeast(MIN_COS)
+        east = center_lon + radius_ew * METER_TO_DEG / cosLat
+        west = center_lon - radius_ew * METER_TO_DEG / cosLat
+    }
+
+    constructor(lat: Double, lon: Double) : this() {
+        update(lat, lon)
     }
 
     /**
@@ -118,33 +73,32 @@ data class BoundingBox(
      * @return whether coverage has changed
      */
     fun update(lat: Double, lon: Double): Boolean {
-        var rslt = false
+        var updated = false
         if (lat > north) {
             north = lat
-            rslt = true
+            updated = true
         }
         if (lat < south) {
             south = lat
-            rslt = true
+            updated = true
         }
         if (lon > east) {
             east = lon
-            rslt = true
+            updated = true
         }
         if (lon < west) {
             west = lon
-            rslt = true
+            updated = true
         }
-        if (rslt) {
+        if (updated) {
             center_lat = (north + south) / 2.0
             center_lon = (east + west) / 2.0
             radius_ns = ((north - center_lat) * DEG_TO_METER)
-            val cosLat = cos(Math.toRadians(center_lat)).coerceAtLeast(MIN_COS)
-            radius_ew =
-                ((east - center_lon) * DEG_TO_METER / cosLat)
+            val cosLat = cos(toRadians(center_lat)).coerceAtLeast(MIN_COS)
+            radius_ew = ((east - center_lon) * DEG_TO_METER * cosLat)
             radius = sqrt(radius_ns * radius_ns + radius_ew * radius_ew)
         }
-        return rslt
+        return updated
     }
 
     override fun toString(): String {

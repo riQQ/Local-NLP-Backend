@@ -194,23 +194,6 @@ class RfEmitter(val type: EmitterType, val id: String) {
     val logString get() = if (DEBUG) "RF Emitter: Type=$type, ID='$id', Note='$note'" else ""
 
     /**
-     * When a scan first detects an emitter a RfEmitter object is created. But at that time
-     * no lookup of the saved information is needed or made. When appropriate, the database
-     * is checked for saved information about the emitter and this method is called to add
-     * that saved information to our model.
-     *
-     * @param emitterInfo Saved information about this emitter from the database.
-     */
-    fun updateInfo(emitterInfo: EmitterInfo?) {
-        if (emitterInfo != null) {
-            if (coverage == null)
-                coverage = BoundingBox(emitterInfo)
-            note = emitterInfo.note
-            changeStatus(EmitterStatus.STATUS_CACHED, "updateInfo('$logString')")
-        }
-    }
-
-    /**
      * Update our estimate of the coverage and location of the emitter based on a
      * position report from the GPS system.
      *
@@ -222,8 +205,9 @@ class RfEmitter(val type: EmitterType, val id: String) {
 
         // don't update location if there is more than 30 sec difference between last observation and gps location
         // this should not happen, but can occur if a wifi scan takes vary long to complete
-        if (abs((lastObservation?.elapsedRealtimeNanos ?: 0L) - gpsLoc.elapsedRealtimeNanos) > 30 * 1e9) {
-            if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location and observation differ by more than 30s: ${(lastObservation?.elapsedRealtimeNanos ?: 0L) - gpsLoc.elapsedRealtimeNanos}ms")
+        if (abs((lastObservation?.elapsedRealtimeNanos ?: 0L) - gpsLoc.elapsedRealtimeNanos) > 10 * 1e9) {
+            if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location and observation differ by more than 10s: ${(lastObservation?.elapsedRealtimeNanos ?: 0L) - gpsLoc.elapsedRealtimeNanos}ms")
+            // should still be ok for mobile towers, todo: decide whether to care about this... as the time difference should not be more than 1 period anyway
             return
         }
 
@@ -240,7 +224,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
         }
         if (cov == null) {
             if (DEBUG) Log.d(TAG, "updateLocation($logString) - Emitter is new.")
-            coverage = BoundingBox(gpsLoc.latitude, gpsLoc.longitude, 0.0f)
+            coverage = BoundingBox(gpsLoc.latitude, gpsLoc.longitude)
             changeStatus(EmitterStatus.STATUS_NEW, "updateLocation('$logString') New")
             return
         }
@@ -483,7 +467,7 @@ fun EmitterType.getRfCharacteristics(): RfCharacteristics =
         BT -> characteristicsBluetooth
         INVALID -> characteristicsUnknown
     }
-fun rfchar(type: EmitterType) = type.getRfCharacteristics() // todo: java crap -> convert WeightedAverage to kotlin and remove this
+fun rfchar(type: EmitterType) = type.getRfCharacteristics() // todo: needed for java -> convert WeightedAverage to kotlin and remove this
 private val characteristicsWlan24 =
     // For 2.4 GHz, indoor range seems to be described as about 46 meters
     // with outdoor range about 90 meters. Set the minimum range to be about
