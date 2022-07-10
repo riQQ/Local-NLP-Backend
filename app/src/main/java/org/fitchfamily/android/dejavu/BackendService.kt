@@ -361,11 +361,16 @@ class BackendService : LocationBackendService() {
             telephonyManager!!.networkOperator?.let { if (it.length > 4) it.substring(3) else null }
         }
         if (DEBUG) Log.d(TAG, "getMobileTowers(): getAllCellInfo() returned " + allCells.size + " records.")
+        val uptimeNanos = System.nanoTime()
+        val realtimeNanos = SystemClock.elapsedRealtimeNanos()
         for (info in allCells) {
             // todo: id.earfcn / arfcn added in api24, can be mapped to frequency and could gelp in range estimation
             //  https://www.cablefree.net/wirelesstechnology/4glte/lte-carrier-frequency-earfcn/
             //  https://en.wikipedia.org/wiki/Absolute_radio-frequency_channel_number
             if (DEBUG) Log.v(TAG, "getMobileTowers(): inputCellInfo: $info")
+            val idStr: String
+            val asu: Int
+            val type: EmitterType
             if (info is CellInfoLte) {
                 val id = info.cellIdentity
 
@@ -385,12 +390,9 @@ class BackendService : LocationBackendService() {
                 if (id.ci == intMax || id.pci == intMax || id.tac == intMax)
                     continue
 
-                val idStr = "${EmitterType.LTE}/$mccString/$mncString/${id.ci}/${id.pci}/${id.tac}"
-                val asu = info.cellSignalStrength.asuLevel * MAXIMUM_ASU / 97
-                val o = Observation(idStr, EmitterType.LTE, asu, info.timeStamp)
-                observations.add(o)
-                if (DEBUG) Log.d(TAG, "valid observation string: $idStr, asu $asu")
-
+                idStr = "${EmitterType.LTE}/$mccString/$mncString/${id.ci}/${id.pci}/${id.tac}"
+                asu = info.cellSignalStrength.asuLevel * MAXIMUM_ASU / 97
+                type = EmitterType.LTE
             } else if (info is CellInfoGsm) {
                 val id = info.cellIdentity
 
@@ -411,12 +413,9 @@ class BackendService : LocationBackendService() {
                 if (id.lac == intMax || id.lac == 0 || id.cid == intMax)
                     continue
 
-                val idStr = "${EmitterType.GSM}/$mccString/$mncString/${id.lac}/${id.cid}"
-                val asu = info.cellSignalStrength.asuLevel
-                val o = Observation(idStr, EmitterType.GSM, asu, info.timeStamp)
-                observations.add(o)
-                if (DEBUG) Log.d(TAG, "valid observation string: $idStr, asu $asu")
-
+                idStr = "${EmitterType.GSM}/$mccString/$mncString/${id.lac}/${id.cid}"
+                asu = info.cellSignalStrength.asuLevel
+                type = EmitterType.GSM
             } else if (info is CellInfoWcdma) {
                 val id = info.cellIdentity
 
@@ -436,11 +435,9 @@ class BackendService : LocationBackendService() {
                 if (id.lac == intMax || id.lac == 0 || id.cid == intMax)
                     continue
 
-                val idStr = "${EmitterType.WCDMA}/$mccString/$mncString/${id.lac}/${id.cid}"
-                val asu = info.cellSignalStrength.asuLevel
-                val o = Observation(idStr, EmitterType.WCDMA, asu, info.timeStamp)
-                observations.add(o)
-                if (DEBUG) Log.d(TAG, "valid observation string: $idStr, asu $asu")
+                idStr = "${EmitterType.WCDMA}/$mccString/$mncString/${id.lac}/${id.cid}"
+                asu = info.cellSignalStrength.asuLevel
+                type = EmitterType.WCDMA
 
             } else if (info is CellInfoCdma) {
                 val id = info.cellIdentity
@@ -448,14 +445,20 @@ class BackendService : LocationBackendService() {
                 if (id.networkId == intMax || id.systemId == intMax || id.basestationId == intMax)
                     continue
 
-                val idStr = "${EmitterType.CDMA}/${id.networkId}/${id.systemId}/${id.basestationId}"
-                val asu = info.cellSignalStrength.asuLevel
-                val o = Observation(idStr, EmitterType.CDMA, asu, info.timeStamp)
-                observations.add(o)
-                if (DEBUG) Log.d(TAG, "valid observation string: $idStr, asu $asu")
-
-            } else
+                idStr = "${EmitterType.CDMA}/${id.networkId}/${id.systemId}/${id.basestationId}"
+                asu = info.cellSignalStrength.asuLevel
+                type = EmitterType.CDMA
+            } else {
                 Log.d(TAG, "getMobileTowers(): Unsupported Cell type: $info")
+                continue
+            }
+            // for some reason, timestamp for cellInfo is like uptimeMillis (not advancing during sleep),
+            // but wifi scanResult.timestamp is like elapsedRealtime (advancing during sleep)
+            // since we need the latter for location time, convert it
+            // (documentation is not clear about this, and actually indicates the latter... but tests show it's the former)
+            val o = Observation(idStr, type, asu, realtimeNanos - uptimeNanos + info.timeStamp)
+            observations.add(o)
+            if (DEBUG) Log.d(TAG, "valid observation string: $idStr, asu $asu")
         }
         if (DEBUG) Log.d(TAG, "getMobileTowers(): Observations: $observations")
         return observations
@@ -507,8 +510,7 @@ class BackendService : LocationBackendService() {
         return observations
     }
 
-    // Stuff for binding to (basically starting) background AP location
-    // collection
+    // Stuff for binding to (basically starting) background AP location collection
     private val mConnection: ServiceConnection = object : ServiceConnection {
         override fun onServiceConnected(className: ComponentName, binder: IBinder) {
             if (DEBUG) Log.d(TAG, "mConnection.onServiceConnected()")
@@ -552,18 +554,17 @@ class BackendService : LocationBackendService() {
             if (DEBUG) Log.d(TAG, "onWiFisChanged(): scan results are the same as previous results, discarding")
             return
         }
-        val observations = hashSetOf<Observation>()
         if (DEBUG) Log.d(TAG, "onWiFisChanged(): " + scanResults.size + " scan results")
-        for (scanResult in scanResults) {
+
+        val observations = scanResults.map { scanResult ->
             if (DEBUG) Log.v(TAG, "rfType=${scanResult.getWifiType()}, ScanResult: $scanResult")
-            val observation = Observation(
+            Observation(
                 scanResult.BSSID.lowercase().replace(".", ":"),
                 scanResult.getWifiType(),
                 WifiManager.calculateSignalLevel(scanResult.level, MAXIMUM_ASU),
                 scanResult.timestamp * 1000, // timestamp is elapsedRealtime when WiFi was last seen, in microseconds
                 scanResult.SSID,
             )
-            observations.add(observation)
         }
         if (observations.isNotEmpty()) {
             if (DEBUG) Log.d(TAG, "onWiFisChanged(): " + observations.size + " observations")
