@@ -19,8 +19,6 @@ package org.fitchfamily.android.dejavu
 *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-import android.os.SystemClock
-
 /**
  * Created by tfitch on 10/5/17.
  */
@@ -37,12 +35,12 @@ import android.os.SystemClock
 data class Observation(
     val identification: RfIdentification,
     var asu: Int = MINIMUM_ASU,
+    val elapsedRealtimeNanos: Long,
     val note: String = "",
-    val elapsedRealtimeNanos: Long = SystemClock.elapsedRealtimeNanos(),
 ) {
-    internal constructor(id: String, type: EmitterType, asu: Int) : this(RfIdentification(id, type), asu)
-    internal constructor(id: String, type: EmitterType, asu: Int, note: String, realtimeNanos: Long) :
-            this(RfIdentification(id, type), asu, note, realtimeNanos)
+    internal constructor(id: String, type: EmitterType, asu: Int, realtimeNanos: Long) : this(RfIdentification(id, type), asu, realtimeNanos)
+    internal constructor(id: String, type: EmitterType, asu: Int, realtimeNanos: Long, note: String) :
+            this(RfIdentification(id, type), asu, realtimeNanos, note)
 
     init {
         asu = asu.coerceAtLeast(MINIMUM_ASU)
