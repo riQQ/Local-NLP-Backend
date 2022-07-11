@@ -93,27 +93,32 @@ class WeightedAverage {
         count++;
         //Log.d(TAG,"add() entry: weight="+weight+", count="+count);
 
-        //
-        // Our input has an accuracy based on the detection of the edge of the coverage area.
-        // So assume that is a high (two sigma) probability and, worse, assume we can turn that
-        // into normal distribution error statistic. We will assume our standard deviation (one
-        // sigma) is half of our accuracy.
-        //
         double asuAdjustedAccuracy;
         String typeString = loc.getExtras().getString(LOC_RF_TYPE);
         if (typeString != null) {
             EmitterType type = EmitterType.valueOf(typeString);
             // loc.accuracy is location radius, but at least type.minimumRange
             // asu goes from 1 (bad) to 31 (good) -> do a linear interpolation
-            // with asu 1 we have loc.accuracy, with asu 31 we are very close to minimumRange
-            // todo:
-            //  this might result in "too good" accuracy -> test and maybe adjust
-            //  do this here or when creating location? but when creating location, this will also affect creation of groups in backendService
-            //   and asu will have double effect on weight
-            asuAdjustedAccuracy = rfchar(type).getMinimumRange() +
-                    (1 - ((asu - MINIMUM_ASU) * 1.0 / MAXIMUM_ASU)) * (loc.getAccuracy() - rfchar(type).getMinimumRange());
+            // with asu 1 we have loc.accuracy, with asu 31 we are close to minimumRange
+            //  but we avoid actually going to minimumRange by adding 10 to maximum asu,
+            //  as this reduces potential issues with "too accurate" values
+            // todo: this could also be done in RfEmitter.generateLocation, but then
+            //  a. asu is incorporated in weight twice, so this should probably be adjusted
+            //      maybe just use 1/accuracy or sth
+            //  b. the improved accuracy is also used in BackendService.divideInGroups
+            //      could this lead to bad effects? it might lead to exclusion of some wifis from
+            //      groups which leads to groups of wifis with worse accuracy resp. asu being preferred
+            double minAcc = rfchar(type).getMinimumRange();
+            asuAdjustedAccuracy = minAcc + (1 - ((asu - MINIMUM_ASU) * 1.0 / (MAXIMUM_ASU + 10))) * (loc.getAccuracy() - minAcc);
         } else asuAdjustedAccuracy = loc.getAccuracy();
-        double stdDev = asuAdjustedAccuracy * METER_TO_DEG/2.0;
+
+        //
+        // Our input has an accuracy based on the detection of the edge of the coverage area.
+        // So assume that is a high (two sigma) probability and, worse, assume we can turn that
+        // into normal distribution error statistic. We will assume our standard deviation (one
+        // sigma) is half of our accuracy.
+        //
+        double stdDev = asuAdjustedAccuracy * METER_TO_DEG / 2.0;
         double cosLat = Math.max(MIN_COS, Math.cos(Math.toRadians(loc.getLatitude())));
 
         latEst.add(loc.getLatitude(), stdDev, weight);
