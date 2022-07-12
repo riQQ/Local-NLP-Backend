@@ -29,6 +29,7 @@ import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
+import android.preference.PreferenceManager
 import android.provider.Settings
 import android.telephony.*
 import android.telephony.gsm.GsmCellLocation
@@ -120,6 +121,17 @@ class BackendService : LocationBackendService() {
         wifiScanInProgress = false
         if (emitterCache == null) emitterCache = Cache(this)
         permissionsOkay = true
+        prefs = PreferenceManager.getDefaultSharedPreferences(applicationContext)
+        if (prefs.getString("build", "") != Build.FINGERPRINT) {
+            // remove usual ASU values if build changed
+            // because results might be different in a different build
+            prefs.edit().apply {
+                putString("build", Build.FINGERPRINT)
+                EmitterType.values().forEach {
+                    remove("ASU_$it")
+                }
+            }.apply()
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             // Check our needed permissions, don't run unless we can.
             for (s in myPerms) {
@@ -829,6 +841,37 @@ class BackendService : LocationBackendService() {
             //Log.d(TAG, "instanceGpsLocationUpdated() entry.");
             instance?.onGpsChanged(locReport)
         }
+
+        // stores the previous asu result, or 0 if asu is not always the same
+        private val asuMap = HashMap<EmitterType, Int>()
+        private lateinit var prefs: SharedPreferences
+
+        // sets asu to 1 if the emitter type always reports the same asu
+        // problem likely depends on phone model
+        fun EmitterType.getCorrectedAsu(asu: Int): Int {
+            when (asuMap[this]) {
+                0 -> return asu
+                asu -> return 1
+                null -> { // need to fill map
+                    val prefKey = "ASU_$this"
+                    if (prefs.contains(prefKey)) { // just insert value and call again
+                        asuMap[this] = prefs.getInt(prefKey, 0)
+                        return this.getCorrectedAsu(asu)
+                    }
+                    // first time we see this emitter type, store asu and trust the result
+                    prefs.edit().putInt(prefKey, asu).apply()
+                    asuMap[this] = asu
+                    return asu
+                }
+                else -> { // not always the same asu -> set to 0
+                    val prefKey = "ASU_$this"
+                    asuMap[this] = 0
+                    prefs.edit().putInt(prefKey, 0).apply()
+                    return asu
+                }
+            }
+        }
+
     }
 
 }

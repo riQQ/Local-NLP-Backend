@@ -1,5 +1,7 @@
 package org.fitchfamily.android.dejavu
 
+import org.fitchfamily.android.dejavu.BackendService.Companion.getCorrectedAsu
+
 /*
 *    DejaVu - A location provider backend for microG/UnifiedNlp
 *
@@ -43,8 +45,8 @@ data class Observation(
             this(RfIdentification(id, type), asu, realtimeNanos, note)
 
     init {
-        asu = asu.coerceAtLeast(MINIMUM_ASU)
-            .coerceAtMost(MAXIMUM_ASU)
+        asu = identification.rfType
+            .getCorrectedAsu(asu.coerceAtLeast(MINIMUM_ASU).coerceAtMost(MAXIMUM_ASU))
     }
 
     val lastUpdateTimeMs = System.currentTimeMillis()
