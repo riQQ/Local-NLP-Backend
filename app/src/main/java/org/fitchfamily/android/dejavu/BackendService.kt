@@ -86,10 +86,10 @@ class BackendService : LocationBackendService() {
     //
     private val seenSet = hashSetOf<RfIdentification>()
     private var emitterCache: Cache? = null
-    private var nextMobileScanTime: Long = 0
-    private var nextWlanScanTime: Long = 0
-    private var oldLocationUpdate = 0L // store last update of the previous period to allow checking whether gpsLocation has changed
-    private var oldScanResults = listOf<ScanResult>() // results of previous wifi scan
+    private var nextMobileScanTime: Long = 0// when the next mobile scan may be started (measured in elapsedRealtime)
+    private var nextWlanScanTime: Long = 0 // when the next WiFi scan may be started (measured in elapsedRealtime)
+    private var oldLocationUpdate = 0L // time of the most recent GPS update in the previous processing period
+    private val oldScanResults = mutableListOf<ScanResult>() // results of previous wifi scan
 
     //
     // We want only a single background thread to do all the work but we have a couple
@@ -256,6 +256,9 @@ class BackendService : LocationBackendService() {
         }
     }
 
+    /**
+     * Wait one REPORTING_INTERVAL and start processing, unless waiting is already happening
+     */
     private fun startProcessingPeriodIfNecessary() {
         if (emitterCache == null) {
             if (DEBUG) Log.d(TAG, "emitterCache is null: creating")
@@ -309,8 +312,7 @@ class BackendService : LocationBackendService() {
     }
 
     /**
-     * Start a separate thread to scan for mobile (cell) towers. This can take some time so
-     * we won't do it in the caller's thread.
+     * Scan for mobile (cell) towers in a coroutine
      */
     @Synchronized
     private fun startMobileScan() {
@@ -325,7 +327,6 @@ class BackendService : LocationBackendService() {
         }
         nextMobileScanTime = currentProcessTime + MOBILE_SCAN_INTERVAL
 
-        // Scanning towers may take some time (does it really?), so do it in background
         if (!airplaneMode) {
             if (DEBUG) Log.d(TAG,"startMobileScan() - Starting mobile signal scan.")
             mobileJob = scope.launch { scanMobile() }
@@ -341,7 +342,7 @@ class BackendService : LocationBackendService() {
         val observations: Collection<Observation> = getMobileTowers()
         if (observations.isNotEmpty()) {
             if (DEBUG) Log.d(TAG, "scanMobile() - " + observations.size + " records to be queued for processing.")
-            queueForProcessing(observations/*, SystemClock.elapsedRealtime()*/)
+            queueForProcessing(observations)
         } else if (DEBUG) Log.d(TAG, "scanMobile() - no results")
     }
 
@@ -376,7 +377,7 @@ class BackendService : LocationBackendService() {
         val uptimeNanos = System.nanoTime()
         val realtimeNanos = SystemClock.elapsedRealtimeNanos()
         for (info in allCells) {
-            // todo: id.earfcn / arfcn added in api24, can be mapped to frequency and could gelp in range estimation
+            // todo: id.earfcn / arfcn added in api24, can be mapped to frequency and could help with range estimation
             //  https://www.cablefree.net/wirelesstechnology/4glte/lte-carrier-frequency-earfcn/
             //  https://en.wikipedia.org/wiki/Absolute_radio-frequency_channel_number
             if (DEBUG) Log.v(TAG, "getMobileTowers(): inputCellInfo: $info")
@@ -582,16 +583,20 @@ class BackendService : LocationBackendService() {
             if (DEBUG) Log.d(TAG, "onWiFisChanged(): " + observations.size + " observations")
             queueForProcessing(observations)
         }
-        oldScanResults = scanResults
+        oldScanResults.clear()
+        oldScanResults.addAll(scanResults)
     }
 
-    // for some reason newResults == oldResults equals didn't work when testing
+    /**
+     * Check whether scan results are (probably) the same. Only SSID, BSSID, signal level and
+     * timestamp are compared for each result, plus the length and order of the list.
+     * For some reason newResults == oldResults equals didn't work when testing.
+     */
     private fun List<ScanResult>.sameAs(oldResults: List<ScanResult>): Boolean {
         if (size != oldResults.size) return false
         for (i in 0 until size) {
             val new = get(i)
             val old = oldResults[i]
-            // compare only main attributes. No change in list order and signal level is likely enough to decide it's unchanged
             if (new.BSSID == old.BSSID && new.SSID == old.SSID && new.level == old.level && new.frequency == old.frequency)
                 continue
             return false
@@ -848,10 +853,15 @@ class BackendService : LocationBackendService() {
 
         // sets asu to 1 if the emitter type always reports the same asu
         // problem likely depends on phone model
+        /**
+         * Some phone models seem to have problems with reporting asu, and
+         * simply report some default value. This function checks and stores whether
+         * asu of an EmitterType is always the same value, and returns MINIMUM_ASU in this case
+         */
         fun EmitterType.getCorrectedAsu(asu: Int): Int {
             when (asuMap[this]) {
                 0 -> return asu
-                asu -> return 1
+                asu -> return MINIMUM_ASU
                 null -> { // need to fill map
                     val prefKey = "ASU_$this"
                     if (prefs.contains(prefKey)) { // just insert value and call again

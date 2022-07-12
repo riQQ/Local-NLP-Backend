@@ -33,7 +33,6 @@ data class RfIdentification(
         val rfId: String,
         val rfType: EmitterType
     ) {
-    // the string is already unique, and the hash isn't any shorter
     val uniqueId = toString()
 
     override fun toString(): String =

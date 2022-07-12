@@ -182,6 +182,7 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
         db.execSQL("COMMIT;")
     }
 
+    // todo: undo/remove v4 upgrade
     private fun upGradeToVersion4(db: SQLiteDatabase) {
         // another upgrade
         // type column is now ordinal of EmitterType (idea: save space, allow for range queries) // todo: better not!

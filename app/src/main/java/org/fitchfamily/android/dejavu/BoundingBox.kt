@@ -27,7 +27,7 @@ import kotlin.math.sqrt
 /**
  * Created by tfitch on 9/28/17.
  */
-class BoundingBox() {
+class BoundingBox private constructor() {
     var center_lat: Double = 0.0
         private set
     var center_lon: Double = 0.0

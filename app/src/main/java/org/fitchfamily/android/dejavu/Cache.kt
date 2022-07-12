@@ -32,8 +32,9 @@ import java.util.HashSet
  *
  * When a RF emitter is seen a get() call is made to the cache. If we have a cache hit
  * the information is directly returned. If we have a cache miss we create a new record
- * and populate it with either default information or information from the flash based
- * database (if it exists in the database).
+ * and populate it with either default information.
+ * Emitters are not loaded from database when using get(), they need to be loaded first
+ * using loadIds(), which channels all the emitters to load into a single db query
  *
  * Periodically we are asked to sync any new or changed RF emitter information to the
  * database. When that occurs we group all the changes in one database transaction for
@@ -41,7 +42,7 @@ import java.util.HashSet
  *
  * If an emitter has not been used for a while we will remove it from the cache (only
  * immediately after a sync() operation so the record will be clean). If the cache grows
- * too large we will clear it to conservery RAM (this should never happen). Again the
+ * too large we will clear it to conserve RAM (this should never happen). Again the
  * clear operation will only occur after a sync() so any dirty records will be flushed
  * to the database.
  *
@@ -54,7 +55,7 @@ internal class Cache(context: Context?) {
      * Map (since they all must have different identifications) of
      * all the emitters we are working with.
      */
-    private val workingSet: MutableMap<String, RfEmitter> = HashMap()
+    private val workingSet = hashMapOf<String, RfEmitter>()
     private var db: Database? = Database(context)
 
     /**
@@ -93,6 +94,12 @@ internal class Cache(context: Context?) {
         }
     }
 
+    /**
+     * Loads the given RfIdentifications from database
+     *
+     * This is a performance improvement over loading emitters on get(),
+     * as all emitters are loaded in a single db query.
+     */
     fun loadIds(ids: Collection<RfIdentification>) {
         if (db == null) return
         val idsToLoad = ids.filterNot { workingSet.containsKey(it.uniqueId) }
