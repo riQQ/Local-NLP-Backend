@@ -384,8 +384,6 @@ class RfEmitter(val type: EmitterType, val id: String) {
 private val DEBUG = BuildConfig.DEBUG
 
 private const val TAG = "DejaVu RfEmitter"
-private const val METERS: Long = 1
-private const val KM = METERS * 1000
 
 // Tag/names for additional information on location records
 const val LOC_RF_ID = "rfid"
@@ -448,67 +446,6 @@ private val blacklistEquals = hashSetOf(
     "svciob", "oebb", "oebb-postbus", "dpmbfree", "telekom_ice", "db ic bus", // transport
 )
 
-/**
- * Given an emitter type, return the various characteristics we need to know
- * to model it.
- *
- * @return The characteristics needed to model the emitter
- */
-fun EmitterType.getRfCharacteristics(): RfCharacteristics =
-    when (this) {
-        WLAN2 -> characteristicsWlan24
-        WLAN5, WLAN6 -> characteristicsWlan5 // small difference in frequency doesn't change range significantly
-        GSM, CDMA, WCDMA, TDSCDMA, LTE, NR -> characteristicsGsm // todo: split it up by type, especially for the minimum range... and ideally min range would depend of frequency
-        BT -> characteristicsBluetooth
-        INVALID -> characteristicsUnknown
-    }
-fun rfchar(type: EmitterType) = type.getRfCharacteristics() // todo: needed for java -> convert WeightedAverage to kotlin and remove this
-private val characteristicsWlan24 =
-    // For 2.4 GHz, indoor range seems to be described as about 46 meters
-    // with outdoor range about 90 meters. Set the minimum range to be about
-    // 3/4 of the indoor range and the typical range somewhere between
-    // the indoor and outdoor ranges.
-    // However we've seem really, really long range detection in rural areas
-    // so base the move distance on that.
-    RfCharacteristics(
-        20F * METERS,
-        35F * METERS,
-        300F * METERS,  // Seen pretty long detection in very rural areas
-        2
-    )
-private val characteristicsWlan5 =
-    RfCharacteristics(
-        10F * METERS,
-        15F * METERS,
-        100F * METERS,  // Seen pretty long detection in very rural areas
-        2
-    )
-private val characteristicsBluetooth =
-    RfCharacteristics(
-        5F * METERS,
-        2F * METERS,
-        150F * METERS, // class 1 devices can have 100 m range
-        2
-    )
-private val characteristicsGsm =
-    RfCharacteristics(
-        100F * METERS,
-        500F * METERS,
-        100F * KM,  // In the desert towers cover large areas
-        1
-    )
-private val characteristicsUnknown =
-// Unknown emitter type, just throw out some values that make it unlikely that
-    // we will ever use it (require too accurate a GPS location, etc.).
-    RfCharacteristics(
-        2F * METERS,
-        50F * METERS,
-        100F * METERS,
-        99
-    )
-
-// emitter types, maybe split up a bit too much
-// (rf characteristics may depend more on frequency than on type)
 enum class EmitterType {
     INVALID,
     WLAN2,
@@ -530,10 +467,3 @@ enum class EmitterStatus {
     STATUS_CACHED,      // In database no changes pending
     STATUS_BLACKLISTED  // Has been blacklisted
 }
-
-class RfCharacteristics (
-    val requiredGpsAccuracy: Float,
-    val minimumRange: Float,
-    val maximumRange: Float,        // Maximum believable coverage radius in meters
-    val minCount: Int               // Minimum number of emitters before we can estimate location
-)

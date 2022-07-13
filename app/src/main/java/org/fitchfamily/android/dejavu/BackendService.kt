@@ -462,6 +462,7 @@ class BackendService : LocationBackendService() {
                 asu = info.cellSignalStrength.asuLevel
                 type = EmitterType.CDMA
             } else {
+                // todo: add NR and TDSCDMA after api update
                 Log.d(TAG, "getMobileTowers(): Unsupported Cell type: $info")
                 continue
             }

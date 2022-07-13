@@ -6,6 +6,7 @@ package org.fitchfamily.android.dejavu;
 
 import static org.fitchfamily.android.dejavu.BackendServiceKt.*;
 import static org.fitchfamily.android.dejavu.RfEmitterKt.*;
+import static org.fitchfamily.android.dejavu.RfCharacteristicsKt.rfchar;
 
 import android.location.Location;
 import android.os.Bundle;
@@ -97,7 +98,7 @@ class WeightedAverage {
         String typeString = loc.getExtras().getString(LOC_RF_TYPE);
         if (typeString != null) {
             EmitterType type = EmitterType.valueOf(typeString);
-            // loc.accuracy is location radius, but at least type.minimumRange
+            // loc.accuracy is set to RfEmitter.radius, but at least EmitterType.minimumRange
             // asu goes from 1 (bad) to 31 (good) -> do a linear interpolation
             // with asu 1 we have loc.accuracy, with asu 31 we are close to minimumRange
             //  but we avoid actually going to minimumRange by adding 10 to maximum asu,
