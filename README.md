@@ -15,23 +15,24 @@ Modified version
 ================
 This is a modified version of the *Déjà Vu* backend.
 Changes:
-* emitters are not removed from the database. Reason: in original *Déjà Vu*, many WiFis are removed when they could not be reached for a while, e.g. because of thick walls. Having useless entries in the database is better than this, and reduces database writes and background processing.
+* emitters are not removed from the database any more. Reason: in original *Déjà Vu*, many WiFis are removed when they could not be found for a while, e.g. because of thick walls. Having useless entries in the database is better than removing actually existing WiFis. Additionally it reduces database writes and background processing considerably.
 * the blacklist is extended and now actually used
 * emitters with invalid LAC are ignored
 * emitters with suspiciously high radius (probably moving WiFis) are blacklisted
 * fixed a bug in BoundingBox
-* try waiting for WiFi scan to finish before reporting position
-* don't use outdated results from failed or throttled WiFi scans
+* try waiting for WiFi scan to finish before reporting position, to avoid reporting low accuracy mobile tower location immediately followed by more precise WiFi-based location
+* don't use outdated results from failed or throttled WiFi scans that could result in wrong location reports
 * faster, but less exact distance calculations. For the used distances up to 100 km, the differences are negligible.
-* avoid large time differences between GPS locations and emitter scan
+* avoid large time differences between GPS locations and emitter scan, so emitters are located at the correct position
+* consider that LTE and 3G cells are usually smaller than GSM cells
 * many internal changes
-* pobably more...
+* probably more...
 
 Further plans:
 * find and fix potential bugs
 * UI for import/export and maybe more
 * update to newer API. This means some old method for detecting mobile towers will be removed, and may break tower detection on some old devices.
-* detect 5G emitters, and adapt characteristics to typical cell sizes
+* detect 5G emitters and maybe more types
 
 
 Yet Another Location Backend
