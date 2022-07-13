@@ -419,8 +419,8 @@ private val blacklistStartsWith = hashSetOf(
     "wifi hotspot ", // Default GM vehicle WiFi name
 
     // Per instructional video on YouTube, Mercedes cars have and SSID of
-    // "MB WLAN nnnnn" where nnnnn is a 5 digit number.
-    "mb wlan ",
+    // "MB WLAN nnnnn" where nnnnn is a 5 digit number, same for MB Hostspot
+    "mb wlan ", "mb hotspot",
     "westbahn ", "buswifi", "coachamerica", "disneylandresortexpress",
     "taxilinq", "transitwirelesswifi", // transport, maybe move some to words?
     "yicarcam", // Dashcam WiFi.
