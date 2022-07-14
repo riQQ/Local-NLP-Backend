@@ -26,6 +26,7 @@ Changes:
 * avoid large time differences between GPS locations and emitter scan, so emitters are located at the correct position
 * consider that LTE and 3G cells are usually smaller than GSM cells
 * consider signal intensity when estimating location accuracy
+* change icon
 * many internal changes
 * probably more...
 
