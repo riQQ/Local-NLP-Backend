@@ -261,37 +261,6 @@ class BackendService : LocationBackendService() {
     }
 
     /**
-     * Wait one REPORTING_INTERVAL and start processing, unless waiting is already happening
-     */
-    private fun startProcessingPeriodIfNecessary() {
-        if (emitterCache == null) {
-            if (DEBUG) Log.d(TAG, "emitterCache is null: creating")
-            emitterCache = Cache(this)
-        }
-        if (periodicProcessing.isActive) return
-        periodicProcessing = scope.launch(Dispatchers.IO) { // IO because there is a lot of wait and db access
-            if (DEBUG) Log.d(TAG, "starting new processing period")
-            delay(REPORTING_INTERVAL)
-            // delay a bit more if wifi scan is still running
-            if (wifiScanInProgress) {
-                if (DEBUG) Log.d(TAG, "Delaying endOfPeriodProcessing because WiFi scan in progress")
-                val waitUntil = nextWlanScanTime + 1000 // delay at max until 1 sec after wifi scan should be finished
-                while (SystemClock.elapsedRealtime() < waitUntil) {
-                    delay(50)
-                    if (!wifiScanInProgress) break
-                }
-            }
-            // delay somewhat more if there are still observations being processed
-            // actually this might be useless because processing and endOfPeriod are both @Synchronized
-            if (backgroundJob.isActive) {
-                if (DEBUG) Log.d(TAG, "Delaying endOfPeriodProcessing because background processing not yet done")
-                delay(30) // usually done in 2-20 ms
-            }
-            endOfPeriodProcessing()
-        }
-    }
-
-    /**
      * Ask Android's WiFi manager to scan for access points (APs). When done the onWiFisChanged()
      * method will be called by Android.
      */
@@ -365,7 +334,7 @@ class BackendService : LocationBackendService() {
         }
         val observations = hashSetOf<Observation>()
 
-        // Try most recent API to get all cell information
+        // Try recent API to get all cell information, or fall back to deprecated method
         val allCells: List<CellInfo> = try {
             telephonyManager!!.allCellInfo ?: emptyList()
         } catch (e: NoSuchMethodError) {
@@ -374,7 +343,8 @@ class BackendService : LocationBackendService() {
         }
         if (allCells.isEmpty()) return deprecatedGetMobileTowers()
 
-        val alternativeMnc by lazy { // determine mnc the other way not more than once per call of getMobileTowers
+        val fallbackMnc by lazy {
+            Log.i(TAG, "getMobileTowers(): using fallback mnc")
             telephonyManager!!.networkOperator?.let { if (it.length > 4) it.substring(3) else null }
         }
         if (DEBUG) Log.d(TAG, "getMobileTowers(): getAllCellInfo() returned " + allCells.size + " records.")
@@ -394,14 +364,12 @@ class BackendService : LocationBackendService() {
                 // get mnc and mcc as strings if available (API 28+)
                 val mccString: String = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
                         id.mccString ?: continue
-                    else
-                        id.mcc.takeIf { it != intMax }?.toString() ?: continue
+                    else id.mcc.takeIf { it != intMax }?.toString() ?: continue
                 val mncString: String = (
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
                         id.mncString?.substringAfter("0")
-                    else
-                        id.mnc.takeIf { it != intMax }?.toString()
-                    ) ?: alternativeMnc ?: continue
+                    else id.mnc.takeIf { it != intMax }?.toString()
+                    ) ?: fallbackMnc ?: continue
 
                 // CellIdentityLte accessors all state Integer.MAX_VALUE is returned for unknown values.
                 if (id.ci == intMax || id.pci == intMax || id.tac == intMax)
@@ -416,14 +384,12 @@ class BackendService : LocationBackendService() {
                 // get mnc and mcc as strings if available (API 28+)
                 val mccString: String = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
                         id.mccString ?: continue
-                    else
-                        id.mcc.takeIf { it != intMax }?.toString() ?: continue
+                    else id.mcc.takeIf { it != intMax }?.toString() ?: continue
                 val mncString: String = (
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
-                            id.mncString?.substringAfter("0")
-                    else
-                            id.mnc.takeIf { it != intMax }?.toString()
-                    ) ?: alternativeMnc ?: continue
+                        id.mncString?.substringAfter("0")
+                    else id.mnc.takeIf { it != intMax }?.toString()
+                    ) ?: fallbackMnc ?: continue
 
                 // CellIdentityGsm accessors all state Integer.MAX_VALUE is returned for unknown values.
                 // analysis of results show frequent (invalid!) LAC of 0 messing with results, so ignore it
@@ -439,14 +405,12 @@ class BackendService : LocationBackendService() {
                 // get mnc and mcc as strings if available (API 28+)
                 val mccString: String = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
                         id.mccString ?: continue
-                    else
-                        id.mcc.takeIf { it != intMax }?.toString() ?: continue
+                    else id.mcc.takeIf { it != intMax }?.toString() ?: continue
                 val mncString: String = (
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
                         id.mncString?.substringAfter("0")
-                    else
-                        id.mnc.takeIf { it != intMax }?.toString()
-                    ) ?: alternativeMnc ?: continue
+                    else id.mnc.takeIf { it != intMax }?.toString()
+                    ) ?: fallbackMnc ?: continue
 
                 // CellIdentityWcdma accessors all state Integer.MAX_VALUE is returned for unknown values.
                 if (id.lac == intMax || id.lac == 0 || id.cid == intMax)
@@ -486,6 +450,7 @@ class BackendService : LocationBackendService() {
      * Use old but still implemented methods to gather information about the mobile (cell)
      * towers our phone sees. Only called if the non-deprecated methods fail to return a
      * usable result.
+     * Method removed in API 29
      *
      * @return A set of observations for all the towers Android is reporting.
      */
@@ -615,7 +580,7 @@ class BackendService : LocationBackendService() {
      *
      * @param observations A set of RF emitter observations (all must be of the same type)
      */
-    @Synchronized
+    // @Synchronized // todo: synchronized probably not necessary, check if this is true
     private fun queueForProcessing(observations: Collection<Observation>) {
         // ignore location if it is old (i.e. from a previous processing period),
         // we don't want to update emitters using outdated locations
@@ -628,14 +593,14 @@ class BackendService : LocationBackendService() {
         }
         val work = WorkItem(observations, loc)
         workQueue.offer(work)
-        if (backgroundJob.isActive)
-            return
-        if (DEBUG) Log.d(TAG,"queueForProcessing() - Starting new background job")
-        backgroundJob = scope.launch {
-            var myWork = workQueue.poll()
-            while (myWork != null) {
-                backgroundProcessing(myWork)
-                myWork = workQueue.poll()
+        if (!backgroundJob.isActive) {
+            if (DEBUG) Log.d(TAG, "queueForProcessing() - Starting new background job")
+            backgroundJob = scope.launch {
+                var myWork = workQueue.poll()
+                while (myWork != null) {
+                    backgroundProcessing(myWork)
+                    myWork = workQueue.poll()
+                }
             }
         }
     }
@@ -643,6 +608,37 @@ class BackendService : LocationBackendService() {
     //
     //    Generic private methods
     //
+
+    /**
+     * Wait one REPORTING_INTERVAL and start processing, unless waiting is already happening
+     */
+    private fun startProcessingPeriodIfNecessary() {
+        if (emitterCache == null) {
+            if (DEBUG) Log.d(TAG, "emitterCache is null: creating")
+            emitterCache = Cache(this)
+        }
+        if (periodicProcessing.isActive) return
+        periodicProcessing = scope.launch(Dispatchers.IO) { // IO because there is a lot of wait and db access
+            if (DEBUG) Log.d(TAG, "starting new processing period")
+            delay(REPORTING_INTERVAL)
+            // delay a bit more if wifi scan is still running
+            if (wifiScanInProgress) {
+                if (DEBUG) Log.d(TAG, "Delaying endOfPeriodProcessing because WiFi scan in progress")
+                val waitUntil = nextWlanScanTime + 1000 // delay at max until 1 sec after wifi scan should be finished
+                while (SystemClock.elapsedRealtime() < waitUntil) {
+                    delay(50)
+                    if (!wifiScanInProgress) break
+                }
+            }
+            // delay somewhat more if there are still observations being processed
+            // actually this might be useless because backgroundProcessing and endOfPeriod are both @Synchronized
+            if (backgroundJob.isActive) {
+                if (DEBUG) Log.d(TAG, "Delaying endOfPeriodProcessing because background processing not yet done")
+                delay(30) // usually done in 2-20 ms
+            }
+            endOfPeriodProcessing()
+        }
+    }
 
     /**
      * Process a group of observations. Process in this context means
@@ -677,6 +673,39 @@ class BackendService : LocationBackendService() {
         // Update emitter coverage based on GPS as needed and get the set of locations
         // the emitters are known to be seen at.
         updateEmitters(emitters, myWork.loc)
+    }
+
+    /**
+     * We bulk up operations to reduce writing to flash memory. And there really isn't
+     * much need to report location to microG/UnifiedNlp more often than once every three
+     * or four seconds. Another reason is that we can average more samples into each
+     * report so there is a chance that our position computation is more accurate.
+     */
+    @Synchronized
+    private fun endOfPeriodProcessing() {
+        if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - end of current period.")
+        if (seenSet.isEmpty()) {
+            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - no emitters seen.")
+            oldLocationUpdate = gpsLocation?.timeOfUpdate ?: 0L
+            return
+        }
+
+        // Estimate location using weighted average of the most recent
+        // observations from the set of RF emitters we have seen. We cull
+        // the locations based on distance from each other to reduce the
+        // chance that a moved/moving emitter will be used in the computation.
+        val locations: Collection<RfLocation>? = culledEmitters(getRfLocations(seenSet))
+        val weightedAverageLocation = computePosition(locations)
+        if (weightedAverageLocation != null && notNullIsland(weightedAverageLocation)) {
+            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing(): reporting location")
+            report(weightedAverageLocation)
+        } else
+            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing(): no location to report")
+
+        // Sync all of our changes to the on flash database and reset the RF emitters we've seen.
+        emitterCache!!.sync()
+        seenSet.clear()
+        oldLocationUpdate = gpsLocation?.timeOfUpdate ?: 0L
     }
 
     /**
@@ -802,39 +831,6 @@ class BackendService : LocationBackendService() {
             }
         }
         return true
-    }
-
-    /**
-     * We bulk up operations to reduce writing to flash memory. And there really isn't
-     * much need to report location to microG/UnifiedNlp more often than once every three
-     * or four seconds. Another reason is that we can average more samples into each
-     * report so there is a chance that our position computation is more accurate.
-     */
-    @Synchronized
-    private fun endOfPeriodProcessing() {
-        if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - end of current period.")
-        if (seenSet.isEmpty()) {
-            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - no emitters seen.")
-            oldLocationUpdate = gpsLocation?.timeOfUpdate ?: 0L
-            return
-        }
-
-        // Estimate location using weighted average of the most recent
-        // observations from the set of RF emitters we have seen. We cull
-        // the locations based on distance from each other to reduce the
-        // chance that a moved/moving emitter will be used in the computation.
-        val locations: Collection<RfLocation>? = culledEmitters(getRfLocations(seenSet))
-        val weightedAverageLocation = computePosition(locations)
-        if (weightedAverageLocation != null && notNullIsland(weightedAverageLocation)) {
-            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing(): reporting location")
-            report(weightedAverageLocation)
-        } else
-            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing(): no location to report")
-
-        // Sync all of our changes to the on flash database and reset the RF emitters we've seen.
-        emitterCache!!.sync()
-        seenSet.clear()
-        oldLocationUpdate = gpsLocation?.timeOfUpdate ?: 0L
     }
 
     companion object {
@@ -964,8 +960,9 @@ fun notNullIsland(lat: Double, lon: Double): Boolean {
 }
 
 // wifiManager.is6GHzBandSupported might be called to check whether it can be WLAN6
-// but wifiManager.is5GHzBandSupported incorrectly returns no on my device, so better don't trust it
-// and actually there might be a better way of doing this...
+// but wifiManager.is5GHzBandSupported incorrectly returns no on some devices, so can we trust
+// it to be correct for 6 GHz?
+// anyway, there might be a better way of determining WiFi type
 fun ScanResult.getWifiType(): EmitterType =
     when {
         frequency < 3000 -> EmitterType.WLAN2 // 2401 - 2495 MHz
@@ -1019,7 +1016,7 @@ fun weightedAverage(locations: Collection<RfLocation>): Location {
         accuracies[i] = asuAdjustedAccuracy * METER_TO_DEG * 0.5
     }
     return Location(LOCATION_PROVIDER).apply {
-        extras = Bundle().apply { putInt("AVERAGED_OF", locations.size) } // todo: was long in original weighted average, is int ok?
+        extras = Bundle().apply { putInt("AVERAGED_OF", locations.size) } // todo: was putInt in original weighted average, does it matter?
 
         // set newest times
         time = locations.maxOf { it.time }
@@ -1041,8 +1038,6 @@ private const val MINIMUM_BELIEVABLE_ACCURACY = 15.0F
 /**
  * @returns the weighted mean of the given positions, accuracies and weights
  */
-// todo: try using this without culledEmitters
-//  though outliers will kill usefulness...
 private fun weightedMean(positions: DoubleArray, weights: DoubleArray): Double {
     var weightedSum = 0.0
     positions.forEachIndexed { i, position ->
