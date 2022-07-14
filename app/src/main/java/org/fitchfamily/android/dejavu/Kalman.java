@@ -53,7 +53,7 @@ package org.fitchfamily.android.dejavu;
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import static org.fitchfamily.android.dejavu.BackendServiceKt.*;
+import static org.fitchfamily.android.dejavu.UtilKt.*;
 
 import android.location.Location;
 import android.os.Bundle;
