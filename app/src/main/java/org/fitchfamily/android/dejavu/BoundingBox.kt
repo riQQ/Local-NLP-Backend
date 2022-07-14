@@ -4,6 +4,7 @@ package org.fitchfamily.android.dejavu
 *    DejaVu - A location provider backend for microG/UnifiedNlp
 *
 *    Copyright (C) 2017 Tod Fitch
+*    Copyright (C) 2022 Helium314
 *
 *    This program is Free Software: you can redistribute it and/or modify
 *    it under the terms of the GNU General Public License as
@@ -26,6 +27,7 @@ import kotlin.math.sqrt
 
 /**
  * Created by tfitch on 9/28/17.
+ * modified by helium314 in 2022
  */
 class BoundingBox private constructor() {
     var center_lat: Double = 0.0

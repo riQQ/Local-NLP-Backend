@@ -4,6 +4,7 @@ package org.fitchfamily.android.dejavu
 *    DejaVu - A location provider backend for microG/UnifiedNlp
 *
 *    Copyright (C) 2017 Tod Fitch
+*    Copyright (C) 2022 Helium314
 *
 *    This program is Free Software: you can redistribute it and/or modify
 *    it under the terms of the GNU General Public License as
@@ -28,6 +29,7 @@ import android.util.Log
 /**
  *
  * Created by tfitch on 9/1/17.
+ * modified by helium314 in 2022
  */
 /**
  * Interface to our on flash SQL database. Note that these methods are not

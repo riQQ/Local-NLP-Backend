@@ -6,6 +6,7 @@ import org.fitchfamily.android.dejavu.BackendService.Companion.getCorrectedAsu
 *    DejaVu - A location provider backend for microG/UnifiedNlp
 *
 *    Copyright (C) 2017 Tod Fitch
+*    Copyright (C) 2022 Helium314
 *
 *    This program is Free Software: you can redistribute it and/or modify
 *    it under the terms of the GNU General Public License as
@@ -23,6 +24,7 @@ import org.fitchfamily.android.dejavu.BackendService.Companion.getCorrectedAsu
 
 /**
  * Created by tfitch on 10/5/17.
+ * modified by helium314 in 2022
  */
 /**
  * A single observation made of a RF emitter.

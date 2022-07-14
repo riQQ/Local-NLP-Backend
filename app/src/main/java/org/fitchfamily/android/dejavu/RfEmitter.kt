@@ -4,6 +4,7 @@ package org.fitchfamily.android.dejavu
 *    DejaVu - A location provider backend for microG/UnifiedNlp
 *
 *    Copyright (C) 2017 Tod Fitch
+*    Copyright (C) 2022 Helium314
 *
 *    This program is Free Software: you can redistribute it and/or modify
 *    it under the terms of the GNU General Public License as
@@ -27,6 +28,7 @@ import kotlin.math.abs
 
 /**
  * Created by tfitch on 8/27/17.
+ * modified by helium314 in 2022
  */
 /**
  * Models everything we know about an RF emitter: Its identification, most recently received
@@ -87,9 +89,9 @@ class RfEmitter(val type: EmitterType, val id: String) {
      * to maintain age information for each RfEmitter object. Having the RfEmitter
      * object itself store the cache age is a bit of a hack, but we do it anyway.
      *
-     * @return The current cache age.
+     * @return The current cache age (number of periods since last observation).
      */
-    var age = 0 // Count of periods since last used (for caching purposes)
+    var age = 0
         private set
 
     /**
@@ -101,8 +103,9 @@ class RfEmitter(val type: EmitterType, val id: String) {
      */
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
-        if (other !is RfIdentification) return false
-        return rfIdentification == other
+        if (other is RfEmitter) return rfIdentification == other.rfIdentification
+        if (other is RfIdentification) return rfIdentification == other
+        return false
     }
 
     /**
@@ -211,7 +214,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 // except if distance is really large and we're sure emitter should be out of range
                 //   this allows updating emitters that are found unbelievably far
                 //   from their known location, so they will be blacklisted
-                && (cov == null || approximateDistance(gpsLoc, cov.center_lat, cov.center_lon)
+                && (cov == null
+                    || approximateDistance(gpsLoc.latitude, gpsLoc.longitude, cov.center_lat, cov.center_lon)
                             < (type.getRfCharacteristics().maximumRange + gpsLoc.accuracy) * 2)
             ) {
             if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location inaccurate.")
@@ -235,13 +239,13 @@ class RfEmitter(val type: EmitterType, val id: String) {
     }
 
     /**
-     * User facing location value. Differs from internal one in that we don't report
+     * RfLocation for backendService. Differs from internal one in that we don't report
      * locations that are guarded due to being new or moved.
      *
-     * @return The coverage estimate for our RF emitter or null if we don't trust our
-     * information.
+     * @return The coverage estimate and further information for our RF emitter or null if
+     * we don't trust our information.
      */
-    val location: Location?
+    val location: RfLocation?
         get() {
             // If we have no observation of the emitter we ought not give a
             // position estimate based on it.
@@ -251,40 +255,15 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 return null
 
             // If we don't have a coverage estimate we will get back a null location
-            val location = generateLocation() ?: return null
+            val cov = coverage ?: return null
 
             // If we are unbelievably close to null island, don't report location
-            if (!notNullIsland(location)) return null
+            if (!notNullIsland(cov.center_lat, cov.center_lon)) return null
 
-            // Time tags based on time of most recent observation
-            location.time = observation.lastUpdateTimeMs
-            location.elapsedRealtimeNanos = observation.elapsedRealtimeNanos
-            val extras = Bundle()
-            extras.putString(LOC_RF_TYPE, type.toString())
-            extras.putString(LOC_RF_ID, id)
-            extras.putInt(LOC_ASU, observation.asu)
-            extras.putInt(LOC_MIN_COUNT, ourCharacteristics.minCount)
-            location.extras = extras
-            return location
+            // Use time and asu based on most recent observation
+            return RfLocation(observation.lastUpdateTimeMs, observation.elapsedRealtimeNanos,
+                cov.center_lat, cov.center_lon, radius, observation.asu, type)
         }
-
-    /**
-     * If we have any coverage information, returns an estimate of that coverage.
-     * For convenience, we use the standard Location record as it contains a center
-     * point and radius (accuracy).
-     *
-     * @return Coverage estimate for emitter or null it does not exist.
-     */
-    private fun generateLocation(): Location? {
-        val cov = coverage ?: return null
-        val location = Location(LOCATION_PROVIDER)
-        location.latitude = cov.center_lat
-        location.longitude = cov.center_lon
-
-        // Hard limit the minimum accuracy based on the type of emitter
-        location.accuracy = radius.toFloat().coerceAtLeast(ourCharacteristics.minimumRange)
-        return location
-    }
 
     /**
      * As part of our effort to not use mobile emitters in estimating or location
@@ -466,4 +445,22 @@ enum class EmitterStatus {
     STATUS_CHANGED,     // In database but something has changed
     STATUS_CACHED,      // In database no changes pending
     STATUS_BLACKLISTED  // Has been blacklisted
+}
+
+// most recent location information about the emitter
+data class RfLocation(
+    /** timestamp of most recent observation, like System.currentTimeMillis() */
+    val time: Long,
+    /** elapsedRealtimeNanos of most recent observation */
+    val elapsedRealtimeNanos: Long,
+    val lat: Double,
+    val lon: Double,
+    /** emitter radius, may be 0 */
+    val radius: Double,
+    /** asu of most recent observation */
+    val asu: Int,
+    val type: EmitterType
+) {
+    /** emitter radius, but at least minimumRange for this EmitterType */
+    val accuracyEstimate: Double = radius.coerceAtLeast(type.getRfCharacteristics().minimumRange)
 }

@@ -25,6 +25,7 @@ Changes:
 * faster, but less exact distance calculations. For the used distances up to 100 km, the differences are negligible.
 * avoid large time differences between GPS locations and emitter scan, so emitters are located at the correct position
 * consider that LTE and 3G cells are usually smaller than GSM cells
+* consider signal intensity when estimating location accuracy
 * many internal changes
 * probably more...
 

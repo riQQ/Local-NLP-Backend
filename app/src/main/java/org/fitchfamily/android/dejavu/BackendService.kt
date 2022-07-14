@@ -4,6 +4,7 @@ package org.fitchfamily.android.dejavu
 *    DejaVu - A location provider backend for microG/UnifiedNlp
 *
 *    Copyright (C) 2017 Tod Fitch
+*    Copyright (C) 2022 Helium314
 *
 *    This program is Free Software: you can redistribute it and/or modify
 *    it under the terms of the GNU General Public License as
@@ -27,6 +28,7 @@ import android.location.Location
 import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Bundle
 import android.os.IBinder
 import android.os.SystemClock
 import android.preference.PreferenceManager
@@ -39,11 +41,13 @@ import org.microg.nlp.api.LocationBackendService
 import org.microg.nlp.api.MPermissionHelperActivity
 import java.util.*
 import java.util.concurrent.ConcurrentLinkedQueue
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sqrt
 
 /**
  * Created by tfitch on 8/27/17.
+ * modified by helium314 in 2022
  */
 class BackendService : LocationBackendService() {
     private var gpsMonitorRunning = false
@@ -695,7 +699,7 @@ class BackendService : LocationBackendService() {
      * @param rfIds IDs of the emitters desired
      * @return A list of the coverage areas for the emitters
      */
-    private fun getRfLocations(rfIds: Collection<RfIdentification>): List<Location> {
+    private fun getRfLocations(rfIds: Collection<RfIdentification>): List<RfLocation> {
         emitterCache!!.loadIds(rfIds)
         val locations = rfIds.mapNotNull { emitterCache!![it].location }
         if (DEBUG) Log.d(TAG, "getRfLocations() - returning ${locations.size} locations")
@@ -711,13 +715,9 @@ class BackendService : LocationBackendService() {
      *
      * @param locations The set of coverage information for the current observations
      */
-    private fun computePosition(locations: Collection<Location>?): Location? {
+    private fun computePosition(locations: Collection<RfLocation>?): Location? {
         locations ?: return null
-        val weightedAverage = WeightedAverage()
-        for (location in locations) {
-            weightedAverage.add(location)
-        }
-        return weightedAverage.result()
+        return weightedAverage(locations)
     }
 
     /**
@@ -743,10 +743,10 @@ class BackendService : LocationBackendService() {
      * @return The largest set of coverages found within the raw observations. That is
      * the most believable set of coverage areas.
      */
-    private fun culledEmitters(locations: Collection<Location>): Set<Location>? {
+    private fun culledEmitters(locations: Collection<RfLocation>): Set<RfLocation>? {
         divideInGroups(locations).maxByOrNull { it.size }?.let { result ->
             // if we only have one location, use it as long as it's not an invalid emitter
-            if (locations.size == 1 && result.single().extras.getString(LOC_RF_TYPE, EmitterType.INVALID.toString()) != EmitterType.INVALID.toString()) {
+            if (locations.size == 1 && result.single().type != EmitterType.INVALID) {
                 if (DEBUG) Log.d(TAG, "culledEmitters() - got only one location, use it")
                 return result
             }
@@ -754,11 +754,11 @@ class BackendService : LocationBackendService() {
             // The RfEmitter class will have put the min count into the location
             // it provided.
             result.forEach {
-                if (result.size >= it.extras.getInt(LOC_MIN_COUNT, 9999))
+                if (result.size >= it.type.getRfCharacteristics().minCount)
                     return result
             }
             if (DEBUG) Log.d(TAG, "culledEmitters() - only got ${result.size}, but " +
-                    "${result.minByOrNull { it.extras.getInt(LOC_MIN_COUNT, 9999) }} are required")
+                    "${result.minByOrNull { it.type.getRfCharacteristics().minCount }} are required")
         }
         return null
     }
@@ -773,7 +773,7 @@ class BackendService : LocationBackendService() {
      * @param locations A set of RF emitter coverage records
      * @return A list of coverage sets.
      */
-    private fun divideInGroups(locations: Collection<Location>): List<MutableSet<Location>> {
+    private fun divideInGroups(locations: Collection<RfLocation>): List<MutableSet<RfLocation>> {
         // Create bins
         val bins = locations.map { hashSetOf(it) }
         for (location in locations) {
@@ -793,11 +793,11 @@ class BackendService : LocationBackendService() {
      * @param locGroup The coverage areas of the emitters already in the group
      * @return True if location is close to others in group
      */
-    private fun locationCompatibleWithGroup(location: Location, locGroup: Set<Location>): Boolean {
+    private fun locationCompatibleWithGroup(location: RfLocation, locGroup: Set<RfLocation>): Boolean {
         // If the location is within range of all current members of the
         // group, then we are compatible.
         for (other in locGroup) {
-            if (approximateDistance(location, other.latitude, other.longitude) > location.accuracy + other.accuracy) {
+            if (approximateDistance(location.lat, location.lon, other.lat, other.lon) > location.accuracyEstimate + other.accuracyEstimate) {
                 return false
             }
         }
@@ -823,7 +823,7 @@ class BackendService : LocationBackendService() {
         // observations from the set of RF emitters we have seen. We cull
         // the locations based on distance from each other to reduce the
         // chance that a moved/moving emitter will be used in the computation.
-        val locations: Collection<Location>? = culledEmitters(getRfLocations(seenSet))
+        val locations: Collection<RfLocation>? = culledEmitters(getRfLocations(seenSet))
         val weightedAverageLocation = computePosition(locations)
         if (weightedAverageLocation != null && notNullIsland(weightedAverageLocation)) {
             if (DEBUG) Log.d(TAG, "endOfPeriodProcessing(): reporting location")
@@ -910,6 +910,7 @@ const val MINIMUM_ASU = 1
 // KPH -> Meters/millisec (KPH * 1000) / (60*60*1000) -> KPH/3600
 //        const val EXPECTED_SPEED = 120.0f / 3600 // 120KPH (74 MPH)
 private const val NULL_ISLAND_DISTANCE = 1000f
+private const val NULL_ISLAND_DISTANCE_DEG = NULL_ISLAND_DISTANCE * METER_TO_DEG
 private const val intMax = Int.MAX_VALUE
 
 /**
@@ -942,11 +943,10 @@ private const val WLAN_SCAN_INTERVAL = REPORTING_INTERVAL - 100 // scans are slo
 
 // much faster than location.distanceTo(otherLocation)
 // and less than 0.1% difference the small (< 1°) distances we're interested in
-// (much more inaccurate if latitude changes
-fun approximateDistance(loc1: Location, lat2: Double, lon2: Double): Double {
-    val distLat = (loc1.latitude - lat2) * DEG_TO_METER
-    val distLon = (loc1.longitude - lon2) * DEG_TO_METER * cos(Math.toRadians(loc1.latitude))
-    return sqrt(distLat * distLat + distLon * distLon)
+fun approximateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val distLat = (lat1 - lat2)
+    val distLon = (lon1 - lon2) * cos(Math.toRadians(lat1))
+    return sqrt(distLat * distLat + distLon * distLon) * DEG_TO_METER
 }
 
 /**
@@ -955,8 +955,12 @@ fun approximateDistance(loc1: Location, lat2: Double, lon2: Double): Double {
  * @param loc The location to be checked
  * @return boolean True if away from lat,lon of 0,0
  */
-fun notNullIsland(loc: Location): Boolean {
-    return approximateDistance(loc, 0.0, 0.0) > NULL_ISLAND_DISTANCE
+fun notNullIsland(loc: Location): Boolean = notNullIsland(loc.latitude, loc.longitude)
+// simplified check that should avoid distance calculation in almost every case where this return true
+fun notNullIsland(lat: Double, lon: Double): Boolean {
+    return abs(lat) > NULL_ISLAND_DISTANCE_DEG
+            || abs(lon) > NULL_ISLAND_DISTANCE_DEG
+            || approximateDistance(lat, lon, 0.0, 0.0) > NULL_ISLAND_DISTANCE
 }
 
 // wifiManager.is6GHzBandSupported might be called to check whether it can be WLAN6
@@ -971,3 +975,101 @@ fun ScanResult.getWifiType(): EmitterType =
         frequency % 10 == 5 -> EmitterType.WLAN6 // in the overlapping range, WLAN6 frequencies end with 5
         else -> EmitterType.WLAN5
     }
+
+/**
+ * Shorter version of the original WeightedAverage, with adjusted weight to consider emitters
+ * we don't know much about.
+ * This ignores multiplying longitude accuracy by cosLat when converting to degrees, and
+ * later dividing by cosLat when converting back to meters. It doesn't cancel out completely
+ * because the used latitudes generally are slightly different, but differences are negligible
+ * for our use.
+ */
+// main difference to the old WeightedAverage: accuracy is also influenced by how far
+// apart the emitters are (sounds more relevant than it is, due to only "compatible" locations
+// being used anyway)
+fun weightedAverage(locations: Collection<RfLocation>): Location {
+    val latitudes = DoubleArray(locations.size)
+    val longitudes = DoubleArray(locations.size)
+    val accuracies = DoubleArray(locations.size)
+    val weights = DoubleArray(locations.size)
+    locations.forEachIndexed { i, it ->
+        latitudes[i] = it.lat
+        longitudes[i] = it.lon
+        val minRange = it.type.getRfCharacteristics().minimumRange
+
+        // weight should be asu / accuracyEstimate, but if we have seen the emitter only at a few
+        // places close together, accuracyEstimate will be minimumRange even though we really don't
+        // know where the emitter is. We want to decrease the weight for such emitters, and we do
+        // it by increasing accuracy value for purpose of determining weight if radius is
+        // suspiciously small. For radius 0 we us minimumRange + 0.5 * maximumRange
+        val accuracyPartOfWeight = if (it.radius > minRange / 2) it.accuracyEstimate
+            else minRange + (0.5 - it.radius / minRange) * it.type.getRfCharacteristics().maximumRange
+        weights[i] = it.asu / accuracyPartOfWeight
+
+        // The actual accuracy we want to use for this location is an adjusted accuracyEstimate.
+        // If asu is good, we're likely close to the emitter, so we can decrease accuracy value.
+        // For asu 31 (maximum) we use 0.74 * minRange + 0.26 * accuracyEstimate
+        val asuAdjustedAccuracy = minRange + (1 - ((it.asu - MINIMUM_ASU) * 1.0 / (MAXIMUM_ASU + 10))) * (it.accuracyEstimate - minRange)
+
+        // <Comment on the factor 0.5 from original WeightedAverage.java>
+        // Our input has an accuracy based on the detection of the edge of the coverage area.
+        // So assume that is a high (two sigma) probability and, worse, assume we can turn that
+        // into normal distribution error statistic. We will assume our standard deviation (one
+        // sigma) is half of our accuracy.
+        accuracies[i] = asuAdjustedAccuracy * METER_TO_DEG * 0.5
+    }
+    return Location(LOCATION_PROVIDER).apply {
+        extras = Bundle().apply { putInt("AVERAGED_OF", locations.size) } // todo: was long in original weighted average, is int ok?
+
+        // set newest times
+        time = locations.maxOf { it.time }
+        elapsedRealtimeNanos = locations.maxOf { it.elapsedRealtimeNanos }
+
+        // set weighted means
+        val latMean = weightedMean(latitudes, weights)
+        val latVariance = weightedVariance(latMean, latitudes, accuracies, weights)
+        val lonMean = weightedMean(longitudes, weights)
+        val lonVariance = weightedVariance(lonMean, longitudes, accuracies, weights)
+        latitude = latMean
+        longitude = lonMean
+        accuracy = (sqrt(latVariance + lonVariance) * DEG_TO_METER)
+            .toFloat().coerceAtLeast(MINIMUM_BELIEVABLE_ACCURACY)
+    }
+}
+private const val MINIMUM_BELIEVABLE_ACCURACY = 15.0F
+
+/**
+ * @returns the weighted mean of the given positions, accuracies and weights
+ */
+// todo: try using this without culledEmitters
+//  though outliers will kill usefulness...
+private fun weightedMean(positions: DoubleArray, weights: DoubleArray): Double {
+    var weightedSum = 0.0
+    positions.forEachIndexed { i, position ->
+        weightedSum += position * weights[i]
+    }
+    return weightedSum / weights.sum()
+}
+
+/**
+ * @returns the weighted variance of the given positions, accuracies and weights.
+ * Variance and not stdDev because we need to square it anyway
+ *
+ * Actually this is not really correct, but it's good enough...
+ * What we want from accuracy:
+ *  more (very) similar locations should improve accuracy
+ *  positions far apart should give worse accuracy, even if the single accuracies are similar
+ */
+private fun weightedVariance(weightedMeanPosition: Double, positions: DoubleArray, accuracies: DoubleArray, weights: DoubleArray): Double {
+    // we have a situation like
+    // https://stats.stackexchange.com/questions/454120/how-can-i-calculate-uncertainty-of-the-mean-of-a-set-of-samples-with-different-u#comment844099_454266
+    // but we already have weights... so come up with something that gives reasonable results
+    var weightedVarianceSum = 0.0
+    positions.forEachIndexed { i, position ->
+        weightedVarianceSum += weights[i] * weights[i] * (accuracies[i] * accuracies[i] + (position - weightedMeanPosition) * (position - weightedMeanPosition))
+    }
+
+    // this is not really variance, but still similar enough to claim it is
+    // dividing by size should be fine...
+    return weightedVarianceSum / (positions.size * weights.sumOf { it * it })
+}

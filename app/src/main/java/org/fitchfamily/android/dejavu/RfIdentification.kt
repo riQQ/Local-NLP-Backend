@@ -4,6 +4,7 @@ package org.fitchfamily.android.dejavu
 *    DejaVu - A location provider backend for microG/UnifiedNlp
 *
 *    Copyright (C) 2017 Tod Fitch
+*    Copyright (C) 2022 Helium314
 *
 *    This program is Free Software: you can redistribute it and/or modify
 *    it under the terms of the GNU General Public License as
@@ -21,6 +22,7 @@ package org.fitchfamily.android.dejavu
 
 /**
  * Created by tfitch on 10/4/17.
+ * modified by helium314 in 2022
  */
 /**
  * This class forms a complete identification for a RF emitter.
@@ -29,16 +31,21 @@ package org.fitchfamily.android.dejavu
  * or class of emitters. And a rfType value that indicates the type of RF
  * emitter we are dealing with.
  */
-data class RfIdentification(
-        val rfId: String,
-        val rfType: EmitterType
-    ) {
-    val uniqueId = toString()
-
-    override fun toString(): String =
-        when (rfType) {
+class RfIdentification(val rfId: String, val rfType: EmitterType) {
+    val uniqueId = when (rfType) {
             EmitterType.WLAN2, EmitterType.WLAN5, EmitterType.WLAN6 -> rfType.name + '/' + rfId
             else -> rfId
         }
 
+    override fun toString(): String = uniqueId
+
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other is RfIdentification) return uniqueId == other.uniqueId
+        return false
+    }
+
+    override fun hashCode(): Int {
+        return uniqueId.hashCode()
+    }
 }
