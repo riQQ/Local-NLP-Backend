@@ -20,6 +20,7 @@ package org.fitchfamily.android.dejavu
 *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
@@ -457,11 +458,77 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
         return result
     }
 
+    fun writeAllToCsv(write: (String) -> Unit) {
+        // write header
+        write("database v4")
+        write("$COL_RFID,$COL_TYPE,$COL_LAT,$COL_LON,$COL_RAD_NS,$COL_RAD_EW,$COL_NOTE")
+        val query = ("SELECT " +
+                COL_RFID + ", " +
+                COL_TYPE + ", " +
+                COL_LAT + ", " +
+                COL_LON + ", " +
+                COL_RAD_NS + ", " +
+                COL_RAD_EW + ", " +
+                COL_NOTE +
+                " FROM " + TABLE_SAMPLES + ";")
+
+        val c = database.rawQuery(query, null)
+        c.use { cursor ->
+            if (cursor!!.moveToFirst()) {
+                do {
+                    val rfId = cursor.getString(0)
+                    val type = cursor.getString(1) // todo: actually no need to write type to the csv, decide before release (also need to adjust columns printed in second line)
+                    val lat = cursor.getDouble(2)
+                    val lon = cursor.getDouble(3)
+                    val radius_ns = cursor.getDouble(4)
+                    val radius_ew = cursor.getDouble(5)
+                    val note = cursor.getString(6) ?: ""
+                    write("$rfId,$type,$lat,$lon,$radius_ns,$radius_ew,$note")
+                } while (cursor.moveToNext())
+            }
+        }
+    }
+
+    fun putLine(collision: Int, rfId: String, type: String, lat: Double, lon: Double, radius_ns: Double, radius_ew: Double, note: String) {
+        val cv = ContentValues().apply {
+            put(COL_RFID, rfId)
+            put(COL_TYPE, type)
+            put(COL_LAT, lat)
+            put(COL_LON, lon)
+            put(COL_RAD_NS, radius_ns)
+            put(COL_RAD_EW, radius_ew)
+            put(COL_NOTE, note)
+        }
+        if (collision == 0 && database.insert(TABLE_SAMPLES, null, cv) == -1L) {
+            // trying to insert, but row exists and we specify merge
+            val bboxOld: BoundingBox
+            database.rawQuery("SELECT $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW FROM $TABLE_SAMPLES WHERE $COL_RFID = '$rfId';", null). use {
+                it.moveToFirst()
+                bboxOld = BoundingBox(it.getDouble(0), it.getDouble(1), it.getDouble(2), it.getDouble(3))
+            }
+            val bboxNew = BoundingBox(lat, lon, radius_ns, radius_ew)
+            if (bboxNew == bboxOld) return
+            bboxNew.update(bboxOld.south, bboxOld.east)
+            bboxNew.update(bboxOld.north, bboxOld.west)
+            val cv2 = ContentValues().apply {
+                put(COL_RFID, rfId)
+                put(COL_TYPE, type)
+                put(COL_LAT, bboxNew.center_lat)
+                put(COL_LON, bboxNew.center_lon)
+                put(COL_RAD_NS, bboxNew.radius_ns)
+                put(COL_RAD_EW, bboxNew.radius_ew)
+                put(COL_NOTE, note)
+            }
+            database.insertWithOnConflict(TABLE_SAMPLES, null, cv2, SQLiteDatabase.CONFLICT_REPLACE)
+        } else
+            database.insertWithOnConflict(TABLE_SAMPLES, null, cv, collision)
+    }
+
     companion object {
         private const val TAG = "DejaVu DB"
         private val DEBUG = BuildConfig.DEBUG
         private const val VERSION = 4
-        private const val NAME = "rf.db"
+        const val NAME = "rf.db"
         private const val TABLE_SAMPLES = "emitters"
         private const val COL_TYPE = "rfType"
         private const val COL_RFID = "rfID"
