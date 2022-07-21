@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:ulogger="http://schemas.android.com/apk/res-auto">
+
+    <CheckBoxPreference
+        android:key="pref_kalman"
+        android:title="@string/pref_kalman_title"
+        android:summary="@string/pref_kalman_summary"
+        android:defaultValue="true" />
+    <CheckBoxPreference
+        android:key="pref_use_cell"
+        android:title="@string/pref_use_cell_title"
+        android:summary="@string/pref_use_cell_summary"
+        android:defaultValue="true" />
+    <CheckBoxPreference
+        android:key="pref_use_wlan"
+        android:title="@string/pref_use_wlan_title"
+        android:summary="@string/pref_use_wlan_summary"
+        android:defaultValue="true" />
+    <Preference
+        android:key="pref_import"
+        android:title="@string/pref_import_title"
+        android:summary="@string/pref_import_summary" />
+    <Preference
+        android:key="pref_export"
+        android:title="@string/pref_export_title"
+        android:summary="@string/pref_export_summary" />
+    <Preference
+        android:key="pref_show_emitters"
+        android:title="@string/pref_show_emitters_title"
+        android:summary="@string/pref_show_emitters_summary" />
+</PreferenceScreen>
