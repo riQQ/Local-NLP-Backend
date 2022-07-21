@@ -50,11 +50,17 @@ class BoundingBox private constructor() {
     var radius = 0.0
         private set
 
-    constructor(info: EmitterInfo) : this() {
-        center_lat = info.latitude
-        center_lon = info.longitude
-        radius_ns = info.radius_ns
-        radius_ew = info.radius_ew
+    constructor(info: EmitterInfo) : this(info.latitude, info.longitude, info.radius_ns, info.radius_ew)
+
+    constructor(lat: Double, lon: Double) : this() {
+        update(lat, lon)
+    }
+
+    constructor(lat: Double, lon: Double, r_ns: Double, r_ew: Double) : this() {
+        center_lat = lat
+        center_lon = lon
+        radius_ns = r_ns
+        radius_ew = r_ew
         radius = sqrt(radius_ns * radius_ns + radius_ew * radius_ew)
 
         north = center_lat + radius_ns * METER_TO_DEG
@@ -62,10 +68,6 @@ class BoundingBox private constructor() {
         val cosLat = cos(toRadians(center_lat)).coerceAtLeast(MIN_COS)
         east = center_lon + radius_ew * METER_TO_DEG / cosLat
         west = center_lon - radius_ew * METER_TO_DEG / cosLat
-    }
-
-    constructor(lat: Double, lon: Double) : this() {
-        update(lat, lon)
     }
 
     /**
