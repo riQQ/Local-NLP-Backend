@@ -41,10 +41,9 @@ data class Observation(
     var asu: Int = MINIMUM_ASU,
     val elapsedRealtimeNanos: Long,
     val note: String = "",
+    val suspect: Boolean = false, // means we don't trust the device that observation is correct
 ) {
     internal constructor(id: String, type: EmitterType, asu: Int, realtimeNanos: Long) : this(RfIdentification(id, type), asu, realtimeNanos)
-    internal constructor(id: String, type: EmitterType, asu: Int, realtimeNanos: Long, note: String) :
-            this(RfIdentification(id, type), asu, realtimeNanos, note)
 
     init {
         asu = identification.rfType

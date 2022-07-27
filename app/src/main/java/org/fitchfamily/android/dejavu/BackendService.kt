@@ -25,10 +25,8 @@ import android.annotation.SuppressLint
 import android.content.*
 import android.content.pm.PackageManager
 import android.location.Location
-import android.net.wifi.ScanResult
 import android.net.wifi.WifiManager
 import android.os.Build
-import android.os.Bundle
 import android.os.IBinder
 import android.os.SystemClock
 import android.preference.PreferenceManager
@@ -41,9 +39,9 @@ import org.microg.nlp.api.LocationBackendService
 import org.microg.nlp.api.MPermissionHelperActivity
 import java.util.*
 import java.util.concurrent.ConcurrentLinkedQueue
-import kotlin.math.abs
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.cos
-import kotlin.math.sqrt
+import kotlin.system.exitProcess
 
 /**
  * Created by tfitch on 8/27/17.
@@ -54,30 +52,28 @@ class BackendService : LocationBackendService() {
     private var wifiBroadcastReceiverRegistered = false
     private var permissionsOkay = true
 
-    private var wifiScanInProgress = false
+    private val wifiScanInProgress = AtomicBoolean(false) // todo: maybe i can switch back to a normal boolean?
     private var telephonyManager: TelephonyManager? = null
     private val wifiManager: WifiManager by lazy { applicationContext.getSystemService(WIFI_SERVICE) as WifiManager }
     private val wifiBroadcastReceiver: BroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            val scanSuccessful = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-                    intent.extras?.getBoolean(WifiManager.EXTRA_RESULTS_UPDATED)
-                else null
-            // don't call onWiFisChanged() if scan wasn't successful
-            if (scanSuccessful != false)
-                scope.launch {
-                    onWiFisChanged(scanSuccessful == true)
+            // don't call onWiFisChanged() if scan definitely wasn't successful
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || intent.extras?.getBoolean(WifiManager.EXTRA_RESULTS_UPDATED) != false)
+                wifiJob = scope.launch {
+                    onWiFisChanged()
                     if (DEBUG) Log.d(TAG, "onReceive: gathered WiFi scan results, to be processed in background")
-                    wifiScanInProgress = false // set after observations are queued for processing
+                    wifiScanInProgress.set(false) // definitely set after observations are queued for processing
                 }
             else {
                 if (DEBUG) Log.d(TAG, "onReceive: received WiFi scan result intent, but scan not successful")
-                wifiScanInProgress = false
+                nextWlanScanTime = 0 // no need to block scans on failed attempt
+                wifiScanInProgress.set(false)
             }
         }
     }
-    private var gpsLocation: Kalman? = null // Filtered GPS (because GPS is so bad on Moto G4 Play)
     private val scope = CoroutineScope(Job() + Dispatchers.Default)
     private var mobileJob = scope.launch { }
+    private var wifiJob = scope.launch { }
     private var backgroundJob: Job = scope.launch { }
     private var periodicProcessing: Job = scope.launch {  }
 
@@ -92,8 +88,16 @@ class BackendService : LocationBackendService() {
     private var emitterCache: Cache? = null
     private var nextMobileScanTime: Long = 0// when the next mobile scan may be started (measured in elapsedRealtime)
     private var nextWlanScanTime: Long = 0 // when the next WiFi scan may be started (measured in elapsedRealtime)
-    private var oldLocationUpdate = 0L // time of the most recent GPS update in the previous processing period
-    private val oldScanResults = mutableListOf<ScanResult>() // results of previous wifi scan
+    private var oldWifiSignalLevels = hashMapOf<String, Int>() // results of previous wifi scan by rfID
+    private var kalmanGpsLocation: Kalman? = null // Filtered GPS (because GPS is so bad on Moto G4 Play)
+    private var oldKalmanUpdate = 0L // time of the most recent Kalman time in the previous processing period
+    private var lastGpsOfThisPeriod: Location? = null // set to null at the end of each period, used if kalman is switched off
+
+    // settings that are read often, so better "copy" them here
+    // todo: either preference change listener, or close service when leaving settings
+    private var useKalman = false
+    private var wifiScanEnabled = true
+    private var mobileScanEnabled = true
 
     //
     // We want only a single background thread to do all the work but we have a couple
@@ -122,11 +126,11 @@ class BackendService : LocationBackendService() {
         nextMobileScanTime = 0
         nextWlanScanTime = 0
         wifiBroadcastReceiverRegistered = false
-        wifiScanInProgress = false
+        wifiScanInProgress.set(false)
         if (emitterCache == null) emitterCache = Cache(this)
         permissionsOkay = true
         prefs = PreferenceManager.getDefaultSharedPreferences(applicationContext)
-        if (prefs.getString("build", "") != Build.FINGERPRINT) {
+        if (prefs.getString("build", "") != Build.FINGERPRINT) { // todo: pref name
             // remove usual ASU values if build changed
             // because results might be different in a different build
             prefs.edit().apply {
@@ -136,6 +140,12 @@ class BackendService : LocationBackendService() {
                 }
             }.apply()
         }
+
+        // todo: take care to use default values from preferences.xml
+        useKalman = prefs.getBoolean(PREF_KALMAN, false)
+        wifiScanEnabled = prefs.getBoolean(PREF_WIFI, true)
+        mobileScanEnabled = prefs.getBoolean(PREF_MOBILE, true)
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             // Check our needed permissions, don't run unless we can.
             for (s in myPerms) {
@@ -156,14 +166,15 @@ class BackendService : LocationBackendService() {
      * Closing down, release our dynamic resources.
      */
     @Synchronized
-    override fun onClose() {
+    public override fun onClose() {
         super.onClose()
         Log.d(TAG, "onClose()")
         if (wifiBroadcastReceiverRegistered) {
             unregisterReceiver(wifiBroadcastReceiver)
         }
         // cancel jobs, and not the coroutine
-        mobileJob.cancel()
+        mobileJob.cancel() // todo: actually cancelling all this is useless, need to make it suspendable
+        wifiJob.cancel()
         backgroundJob.cancel()
         periodicProcessing.cancel()
         setGpsMonitorRunning(false)
@@ -218,6 +229,7 @@ class BackendService : LocationBackendService() {
         }
         return null
     }
+
     //
     // Private methods
     //
@@ -258,67 +270,71 @@ class BackendService : LocationBackendService() {
      *
      * @param update The current GPS reported location
      */
+    @Synchronized
     private fun onGpsChanged(update: Location) {
-        synchronized(this) {
-            if (permissionsOkay && notNullIsland(update)) {
-                if (DEBUG) Log.d(TAG, "onGpsChanged() entry.")
-                if (gpsLocation == null)
-                    gpsLocation = Kalman(update, GPS_COORDINATE_NOISE)
-                else
-                    gpsLocation?.update(update)
-                scanAllSensors()
-            } else
-                Log.d(TAG, "onGpsChanged() - Permissions not granted, soft fail.")
-        }
+        if (permissionsOkay && notNullIsland(update)) {
+            if (DEBUG) Log.d(TAG, "onGpsChanged(), accuracy ${update.accuracy}")
+            if (useKalman)
+                kalmanGpsLocation?.update(update) ?: run { kalmanGpsLocation = Kalman(update, GPS_COORDINATE_NOISE) }
+            else
+                lastGpsOfThisPeriod = update
+            scanAllSensors()
+        } else
+            Log.d(TAG, "onGpsChanged() - Permissions not granted, soft fail.")
     }
 
     /**
      * Kick off new scans for all the sensor types we know about. Typically scans
      * should occur asynchronously so we don't hang up our caller's thread.
      */
+    @Synchronized
     private fun scanAllSensors() {
-        synchronized(this) {
-            if (emitterCache == null) {
-                if (DEBUG) Log.d(TAG, "scanAllSensors() - emitterCache is null?!?")
-                return
-            }
-
-            if (DEBUG) Log.d(TAG, "scanAllSensors() - starting scans")
-            startProcessingPeriodIfNecessary()
-            startWiFiScan()
-            startMobileScan()
+        if (emitterCache == null) {
+            if (DEBUG) Log.d(TAG, "scanAllSensors() - emitterCache is null?!?")
+            return
         }
+
+        if (DEBUG) Log.d(TAG, "scanAllSensors() - starting scans")
+        val wifiScanStarted = startWiFiScan()
+        val mobileScanStarted = startMobileScan()
+        if (wifiScanStarted || mobileScanStarted)
+            startProcessingPeriodIfNecessary() // only try starting new period if a scan was started
     }
 
     /**
      * Ask Android's WiFi manager to scan for access points (APs). When done the onWiFisChanged()
      * method will be called by Android.
+     * @returns whether a scan was started
      */
-    private fun startWiFiScan() {
+    @Synchronized
+    private fun startWiFiScan(): Boolean {
         // Throttle scanning for WiFi APs. In open terrain an AP could cover a kilometer.
         // Even in a vehicle moving at highway speeds it can take several seconds to traverse
         // the coverage area, no need to waste phone resources scanning too rapidly.
         val currentProcessTime = SystemClock.elapsedRealtime()
         if (currentProcessTime < nextWlanScanTime) {
             if (DEBUG) Log.d(TAG, "startWiFiScan() - need to wait before starting next scan")
-            return
+            return false
         }
         // in case wifi scan doesn't return anything for a long time we simply allow starting another one
-        if (!wifiScanInProgress || currentProcessTime > nextWlanScanTime + 3 * WLAN_SCAN_INTERVAL) {
-            nextWlanScanTime = currentProcessTime + WLAN_SCAN_INTERVAL
-            if (canScanWifi) {
+        if (!wifiScanInProgress.get() || currentProcessTime > nextWlanScanTime + 2 * WLAN_SCAN_INTERVAL) {
+            if (canScanWifi && wifiScanEnabled) {
                 if (DEBUG) Log.d(TAG, "startWiFiScan() - Starting WiFi collection.")
-                wifiScanInProgress = true
+                nextWlanScanTime = currentProcessTime + WLAN_SCAN_INTERVAL
+                wifiScanInProgress.set(true)
                 wifiManager.startScan()
-            } else if (DEBUG) Log.d(TAG, "startWiFiScan() - WiFi scan is disabled.")
+                return true
+            } else if (DEBUG) Log.d(TAG, "startWiFiScan() - WiFi scan is disabled or not possible.")
         } else if (DEBUG) Log.d(TAG, "startWiFiScan() - WiFi scan in progress, not starting.")
+        return false
     }
 
     /**
      * Scan for mobile (cell) towers in a coroutine
+     * @returns whether a scan was started
      */
     @Synchronized
-    private fun startMobileScan() {
+    private fun startMobileScan(): Boolean {
         // Throttle scanning for mobile towers. Generally each tower covers a significant amount
         // of terrain so even if we are moving fairly rapidly we should remain in a single tower's
         // coverage area for several seconds. No need to sample more often than that and we save
@@ -326,14 +342,21 @@ class BackendService : LocationBackendService() {
         val currentProcessTime = SystemClock.elapsedRealtime()
         if (currentProcessTime < nextMobileScanTime || mobileJob.isActive) {
             if (DEBUG) Log.d(TAG, "startMobileScan() - need to wait before starting next scan")
-            return
+            if (currentProcessTime > nextWlanScanTime + 60000) {
+                Log.w(TAG, "startMobileScan() - previous mobile scan still not done, committing suicide to stop it")
+                // todo: if this works, it should also be done/checked onClose()
+                exitProcess(0)
+            }
+            return false
         }
         nextMobileScanTime = currentProcessTime + MOBILE_SCAN_INTERVAL
 
-        if (!airplaneMode) {
-            if (DEBUG) Log.d(TAG,"startMobileScan() - Starting mobile signal scan.")
+        if (!airplaneMode && mobileScanEnabled) {
+//            if (DEBUG) Log.d(TAG,"startMobileScan() - Starting mobile signal scan.") better log in other thread
             mobileJob = scope.launch { scanMobile() }
-        } else if (DEBUG) Log.d(TAG,"startMobileScan() - Airplane mode is enabled.")
+            return true
+        } else if (DEBUG) Log.d(TAG,"startMobileScan() - Airplane mode is enabled or mobile scan disabled.")
+        return false
     }
 
     /**
@@ -341,7 +364,7 @@ class BackendService : LocationBackendService() {
      * to the queue for background processing.
      */
     private fun scanMobile() {
-        // if (DEBUG) Log.d(TAG, "scanMobile() - calling getMobileTowers().")
+        if (DEBUG) Log.d(TAG, "scanMobile() - calling getMobileTowers().")
         val observations: Collection<Observation> = getMobileTowers()
         if (observations.isNotEmpty()) {
             if (DEBUG) Log.d(TAG, "scanMobile() - " + observations.size + " records to be queued for processing.")
@@ -366,15 +389,20 @@ class BackendService : LocationBackendService() {
 
         // Try recent API to get all cell information, or fall back to deprecated method
         val allCells: List<CellInfo> = try {
-            telephonyManager!!.allCellInfo ?: emptyList()
-        } catch (e: NoSuchMethodError) {
+            runBlocking { withTimeout(10000) { runInterruptible { // TODO: does this work/help?
+                telephonyManager!!.allCellInfo ?: emptyList()
+            }}}
+        } catch (e: CancellationException) {
+            Log.i(TAG, "getMobileTowers(): getMobileTowers timed out and got cancelled.")
             emptyList()
-            // Log.d(TAG, "getMobileTowers(): no such method: getAllCellInfo().");
+        } catch (e: NoSuchMethodError) {
+            Log.d(TAG, "getMobileTowers(): no such method: getAllCellInfo().");
+            emptyList()
         }
         if (allCells.isEmpty()) return deprecatedGetMobileTowers()
 
         val fallbackMnc by lazy {
-            Log.i(TAG, "getMobileTowers(): using fallback mnc")
+            Log.i(TAG, "getMobileTowers(): using fallback mnc") // todo: this triggers quite often... figure out why?
             telephonyManager!!.networkOperator?.let { if (it.length > 4) it.substring(3) else null }
         }
         if (DEBUG) Log.d(TAG, "getMobileTowers(): getAllCellInfo() returned " + allCells.size + " records.")
@@ -468,6 +496,8 @@ class BackendService : LocationBackendService() {
             // but wifi scanResult.timestamp is like elapsedRealtime (advancing during sleep)
             // since we need the latter for location time, convert it
             // (documentation is not clear about this, and actually indicates the latter... but tests show it's the former)
+            // TODO: sometimes MNC is an empty string, this must not happen
+            //  probably the issue is substringAfter("0")
             val o = Observation(idStr, type, asu, realtimeNanos - uptimeNanos + info.timeStamp)
             observations.add(o)
             if (DEBUG) Log.d(TAG, "valid observation string: $idStr, asu $asu")
@@ -528,51 +558,38 @@ class BackendService : LocationBackendService() {
      * the area.
      */
     @Synchronized
-    private fun onWiFisChanged(definitelyNewResults: Boolean) {
-        if (emitterCache == null) {
+    private fun onWiFisChanged() {
+        if (emitterCache == null)
             return
-        }
+
         val scanResults = wifiManager.scanResults
-        if (!definitelyNewResults && scanResults.sameAs(oldScanResults)) {
-            // don't continue if scan results didn't change
-            if (DEBUG) Log.d(TAG, "onWiFisChanged(): scan results are the same as previous results, discarding")
-            return
-        }
         if (DEBUG) Log.d(TAG, "onWiFisChanged(): " + scanResults.size + " scan results")
 
+        // We save the signal levels, because they are important for asu and thus location
+        // computation, but cannot always be trusted. Some phones seem to report the signal
+        // levels from the previous scan again, usually just for one WiFi type.
+        // We don't want to discard these suspect results, but rather treat them with care.
+        val signalLevels = HashMap<String, Int>(scanResults.size * 2) // signal levels by rfId
+
         val observations = scanResults.map { scanResult ->
-            if (DEBUG) Log.v(TAG, "rfType=${scanResult.getWifiType()}, ScanResult: $scanResult")
-            Observation(
-                scanResult.BSSID.lowercase().replace(".", ":"),
-                scanResult.getWifiType(),
+//            if (DEBUG) Log.v(TAG, "rfType=${scanResult.getWifiType()}, ScanResult: $scanResult")
+            val rfId = RfIdentification(scanResult.BSSID.lowercase().replace(".", ":"), scanResult.getWifiType())
+            signalLevels[rfId.uniqueId] = scanResult.level
+            val o = Observation(
+                rfId,
                 WifiManager.calculateSignalLevel(scanResult.level, MAXIMUM_ASU),
                 scanResult.timestamp * 1000, // timestamp is elapsedRealtime when WiFi was last seen, in microseconds
                 scanResult.SSID,
+                scanResult.level == oldWifiSignalLevels[rfId.uniqueId]
             )
+            if (DEBUG) Log.v(TAG, "$o, level=${scanResult.level}")
+            o
         }
         if (observations.isNotEmpty()) {
-            if (DEBUG) Log.d(TAG, "onWiFisChanged(): " + observations.size + " observations")
+            if (DEBUG) Log.d(TAG, "onWiFisChanged(): " + observations.size + " observations, ${observations.count { it.suspect }} suspect")
             queueForProcessing(observations)
         }
-        oldScanResults.clear()
-        oldScanResults.addAll(scanResults)
-    }
-
-    /**
-     * Check whether scan results are (probably) the same. Only SSID, BSSID, signal level and
-     * timestamp are compared for each result, plus the length and order of the list.
-     * For some reason newResults == oldResults equals didn't work when testing.
-     */
-    private fun List<ScanResult>.sameAs(oldResults: List<ScanResult>): Boolean {
-        if (size != oldResults.size) return false
-        for (i in 0 until size) {
-            val new = get(i)
-            val old = oldResults[i]
-            if (new.BSSID == old.BSSID && new.SSID == old.SSID && new.level == old.level && new.frequency == old.frequency)
-                continue
-            return false
-        }
-        return true
+        oldWifiSignalLevels = signalLevels
     }
 
     //
@@ -585,21 +602,22 @@ class BackendService : LocationBackendService() {
      *
      * @param observations A set of RF emitter observations (all must be of the same type)
      */
-    // @Synchronized // todo: synchronized probably not necessary, check if this is true
+    @Synchronized
     private fun queueForProcessing(observations: Collection<Observation>) {
+        if (emitterCache == null) {
+            if (DEBUG) Log.d(TAG, "queueForProcessing() - emitterCache is null: creating")
+            emitterCache = Cache(this)
+        }
         // ignore location if it is old (i.e. from a previous processing period),
         // we don't want to update emitters using outdated locations
-        val loc = gpsLocation?.let {
-            if (it.timeOfUpdate > oldLocationUpdate && notNullIsland(it.location)) it.location
-            else {
-                if (DEBUG) Log.d(TAG,"queueForProcessing() - Location too old or near null island, ${it.timeOfUpdate - oldLocationUpdate}ms")
-                null
-            }
-        }
-        val work = WorkItem(observations, loc)
+        val loc = if (useKalman) {
+            kalmanGpsLocation?.takeIf { it.timeOfUpdate > oldKalmanUpdate }?.location
+        } else
+            lastGpsOfThisPeriod
+//        val work = WorkItem(observations, loc)
+/*        val work = WorkItem(observations, lastGpsOfThisPeriod)
         workQueue.offer(work)
         if (!backgroundJob.isActive) {
-            if (DEBUG) Log.d(TAG, "queueForProcessing() - Starting new background job")
             backgroundJob = scope.launch {
                 var myWork = workQueue.poll()
                 while (myWork != null) {
@@ -607,37 +625,78 @@ class BackendService : LocationBackendService() {
                     myWork = workQueue.poll()
                 }
             }
+            if (DEBUG) Log.d(TAG, "queueForProcessing() - Started new background job")
+        }*/
+        // todo: new attempt at making endOfPeriod happen definitely after processing is done
+        //  update endOfPeriod (seenSet.toList() and clear(), both synchronized on seenSet) if this helps
+        //  looks very much like this helps!
+        //  cleanup if i take it: remove workQueue, backgroundJob, backgroundProcessing
+        blockingProcessing(observations, loc?.takeIf { notNullIsland(it) })
+    }
+
+    // todo: actually this CAN take long
+    //  do it in background, but call backgroundJob.join() at the end of startProcessingPeriodIfNecessary?
+    @Synchronized
+    private fun blockingProcessing(observations: Collection<Observation>, loc: Location?) {
+        if (emitterCache == null) return
+        val emitters = HashSet<RfEmitter>()
+
+        // load all emitters into the cache to avoid several single database transactions
+        val ids = observations.map { it.identification }
+        emitterCache!!.loadIds(ids)
+
+        // Remember all the emitters we've seen during this processing period
+        // and build a set of emitter objects for each RF emitter in the
+        // observation set.
+        seenSet.addAll(ids)
+        for (observation in observations) {
+            val emitter = emitterCache!![observation.identification]
+            emitter.lastObservation = observation
+            emitters.add(emitter)
         }
+        // Update emitter coverage based on GPS as needed and get the set of locations
+        // the emitters are known to be seen at.
+
+        // todo: maybe... could it happen that updating is not finished when i get the emitters in endOfPeriod?
+        //  then i should do it blocking!
+        scope.launch { updateEmitters(emitters, loc) }
+
+        startProcessingPeriodIfNecessary()
     }
 
     /**
      * Wait one REPORTING_INTERVAL and start processing, unless waiting is already happening
      */
+    // TODO: sometimes i get "starting new background job" and immediately after "endOfPeriod"
+    //  maybe when this here is waiting because endOfPeriod is synchronized?
+    //  try doing sth, this is not nice -> actually bg processing IS sync, so maybe QFP sync actually DOES help
+    //    issue is not even the boolean / atomic boolean, its rather the fucking compiler optimization: https://stackoverflow.com/questions/8521819/performance-of-synchronize-section-in-java
+    @Synchronized
     private fun startProcessingPeriodIfNecessary() {
-        if (emitterCache == null) {
-            if (DEBUG) Log.d(TAG, "emitterCache is null: creating")
-            emitterCache = Cache(this)
-        }
         if (periodicProcessing.isActive) return
-        periodicProcessing = scope.launch(Dispatchers.IO) { // IO because there is a lot of wait and db access
-            if (DEBUG) Log.d(TAG, "starting new processing period")
+        if (DEBUG) Log.d(TAG, "startProcessingPeriodIfNecessary: starting new processing period")
+        // todo: looks like this sometimes starts a period when it's not necessary
+        //  presumably:
+        //    waiting for wifi scan
+        //    wifi scan done
+        //    this starts endOfPeriod
+        //    SOMETHING starts this again, and it's not a scan -> is it some delayed effect from bg proc?
+        //  now set to synchronized, maybe this is better? (but actually i don't like it... remove again if it's not perfect now)
+        periodicProcessing = scope.launch(Dispatchers.IO) { // IO because it's mostly waiting
             delay(REPORTING_INTERVAL)
             // delay a bit more if wifi scan is still running
-            if (wifiScanInProgress) {
-                if (DEBUG) Log.d(TAG, "Delaying endOfPeriodProcessing because WiFi scan in progress")
+            if (wifiScanInProgress.get()) {
+                if (DEBUG) Log.d(TAG, "startProcessingPeriodIfNecessary: Delaying endOfPeriodProcessing because WiFi scan in progress")
                 val waitUntil = nextWlanScanTime + 1000 // delay at max until 1 sec after wifi scan should be finished
                 while (SystemClock.elapsedRealtime() < waitUntil) {
                     delay(50)
-                    if (!wifiScanInProgress) break
+                    if (!wifiScanInProgress.get()) {
+                        if (DEBUG) Log.d(TAG, "startProcessingPeriodIfNecessary: wifi scan done, stop waiting")
+                        break
+                    }
                 }
             }
-            // delay somewhat more if there are still observations being processed
-            // actually this might be useless because backgroundProcessing and endOfPeriod are both @Synchronized
-            if (backgroundJob.isActive) {
-                if (DEBUG) Log.d(TAG, "Delaying endOfPeriodProcessing because background processing not yet done")
-                delay(30) // usually done in 2-20 ms
-            }
-            endOfPeriodProcessing()
+            scope.launch(Dispatchers.Default) { endOfPeriodProcessing() } // default because mostly processing
         }
     }
 
@@ -673,7 +732,9 @@ class BackendService : LocationBackendService() {
 
         // Update emitter coverage based on GPS as needed and get the set of locations
         // the emitters are known to be seen at.
-        updateEmitters(emitters, myWork.loc)
+        updateEmitters(emitters, myWork.loc) // todo: this could be done in background, just scope.launch {}
+        // todo: try to keep it the way it is: synchronized, but in coroutine. sometimes it's quite slow, when it needs to fetch a bunch of emitters
+        //  -> see bgProc2
     }
 
     /**
@@ -685,9 +746,11 @@ class BackendService : LocationBackendService() {
     @Synchronized
     private fun endOfPeriodProcessing() {
         if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - end of current period.")
+        oldKalmanUpdate = kalmanGpsLocation?.timeOfUpdate ?: 0L
+        lastGpsOfThisPeriod = null
+
         if (seenSet.isEmpty()) {
             if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - no emitters seen.")
-            oldLocationUpdate = gpsLocation?.timeOfUpdate ?: 0L
             return
         }
 
@@ -695,17 +758,32 @@ class BackendService : LocationBackendService() {
         // observations from the set of RF emitters we have seen. We cull
         // the locations based on distance from each other to reduce the
         // chance that a moved/moving emitter will be used in the computation.
-        val weightedAverageLocation = culledEmitters(getRfLocations(seenSet))?.weightedAverage()
+        // todo: find the cull function that always chooses the "best" set of locations
+        //  currently newThing looks really good
+        val locations = getRfLocations(seenSet)
+//        val weightedAverageLocation = locations.newThing()?.weightedAverage()
+        val weightedAverageLocation = culledEmittersFactor(locations, 1.2)?.weightedAverage()
         if (weightedAverageLocation != null && notNullIsland(weightedAverageLocation)) {
             if (DEBUG) Log.d(TAG, "endOfPeriodProcessing(): reporting location")
             report(weightedAverageLocation)
+            // lat positive: alternative puts me further south
+            // lon positive: alternative puts me further west
+            val weightedNoCull = locations.weightedAverage()
+            Log.i(TAG, "avg (${weightedAverageLocation.accuracy}) minus noCull loc (${weightedNoCull.accuracy}): lat ${(weightedAverageLocation.latitude - weightedNoCull.latitude)* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - weightedNoCull.longitude) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
+            val weightedThirdCull = culledEmittersFactor(locations, 1.5)?.weightedAverage()
+            Log.i(TAG, "avg (${weightedAverageLocation.accuracy}) minus 1.5Cull loc (${weightedThirdCull?.accuracy}): lat ${(weightedAverageLocation.latitude - (weightedThirdCull?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (weightedThirdCull?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
+            val weightedOriginal = culledEmitters(locations)?.weightedAverage()
+            Log.i(TAG, "avg (${weightedAverageLocation.accuracy}) minus weightedOriginal loc (${weightedOriginal?.accuracy}): lat ${(weightedAverageLocation.latitude - (weightedOriginal?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (weightedOriginal?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
+            val medianCull = locations.medianCull()?.weightedAverage()
+            Log.i(TAG, "avg (${weightedAverageLocation.accuracy}) minus medianCull loc (${medianCull?.accuracy}): lat ${(weightedAverageLocation.latitude - (medianCull?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (medianCull?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
+            val newThing = locations.medianCull()?.weightedAverage()
+            Log.i(TAG, "avg (${weightedAverageLocation.accuracy}) minus newThing loc (${newThing?.accuracy}): lat ${(weightedAverageLocation.latitude - (newThing?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (newThing?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
         } else
             if (DEBUG) Log.d(TAG, "endOfPeriodProcessing(): no location to report")
 
         // Sync all of our changes to the on flash database and reset the RF emitters we've seen.
         emitterCache!!.sync()
         seenSet.clear()
-        oldLocationUpdate = gpsLocation?.timeOfUpdate ?: 0L
     }
 
     /**
@@ -736,7 +814,8 @@ class BackendService : LocationBackendService() {
     }
 
     companion object {
-        private var instance: BackendService? = null
+        var instance: BackendService? = null
+            private set
 
         /**
          * Called by Android when a GPS location reports becomes available.
@@ -782,7 +861,6 @@ class BackendService : LocationBackendService() {
                 }
             }
         }
-
     }
 
 }

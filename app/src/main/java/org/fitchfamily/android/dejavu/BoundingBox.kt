@@ -57,6 +57,7 @@ class BoundingBox private constructor() {
     }
 
     constructor(lat: Double, lon: Double, r_ns: Double, r_ew: Double) : this() {
+        if (r_ns < 0 || r_ew < 0) throw IllegalArgumentException("radii cannot be < 0")
         center_lat = lat
         center_lon = lon
         radius_ns = r_ns

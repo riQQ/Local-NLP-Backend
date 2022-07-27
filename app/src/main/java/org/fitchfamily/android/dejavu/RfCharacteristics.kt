@@ -23,14 +23,30 @@ package org.fitchfamily.android.dejavu
 // moved from RfEmitter to separate file
 
 class RfCharacteristics (
-    val requiredGpsAccuracy: Float,
-    val minimumRange: Double,
-    val maximumRange: Double,        // Maximum believable coverage radius in meters
+    val requiredGpsAccuracy: Float, // Required accuracy for updating emitter coverage (should be less than half of minimumRange, as GPS is frequently off by more then the accuracy)
+    val minimumRange: Double,       // Minimum believable coverage radius in meters
+    val maximumRange: Double,       // Maximum believable coverage radius in meters
     val minCount: Int               // Minimum number of emitters before we can estimate location
 )
 
+enum class EmitterType {
+    INVALID,
+    WLAN2,
+    WLAN5,
+    WLAN6,
+    BT,
+    GSM,
+    CDMA,
+    WCDMA,
+    TDSCDMA,
+    LTE,
+    NR,
+}
+
 private const val METERS: Float = 1.0f
 private const val KM = METERS * 1000
+
+val shortRangeEmitterTypes = arrayOf(EmitterType.WLAN5, EmitterType.WLAN6, EmitterType.WLAN2, EmitterType.BT)
 
 /**
  * Given an emitter type, return the various characteristics we need to know
@@ -62,7 +78,7 @@ private val characteristicsWlan24 = RfCharacteristics(
 )
 
 private val characteristicsWlan5 = RfCharacteristics(
-    10F * METERS,
+    7F * METERS, // todo: set to 10 if using kalman? 7 appears to be impossible... even better than 10 is very rare
     15.0 * METERS,
     100.0 * METERS,  // Seen pretty long detection in very rural areas
     2

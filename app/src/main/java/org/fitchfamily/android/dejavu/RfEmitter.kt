@@ -52,10 +52,14 @@ class RfEmitter(val type: EmitterType, val id: String) {
         if (emitterInfo.radius_ew < 0) {
             coverage = null
             status = EmitterStatus.STATUS_BLACKLISTED
+        } else {
+            coverage = BoundingBox(emitterInfo)
+            status = EmitterStatus.STATUS_CACHED
         }
-        coverage = BoundingBox(emitterInfo)
-        status = EmitterStatus.STATUS_CACHED
         note = emitterInfo.note
+        // this is only for emitters that were created using old versions, with new ones too large emitters can't be in db
+        if (emitterInfo.radius_ew > type.getRfCharacteristics().maximumRange || emitterInfo.radius_ns > type.getRfCharacteristics().maximumRange)
+            changeStatus(EmitterStatus.STATUS_BLACKLISTED, "$logString: loaded from db, but radius too large")
     }
 
     private val ourCharacteristics = type.getRfCharacteristics()
@@ -198,6 +202,10 @@ class RfEmitter(val type: EmitterType, val id: String) {
      */
     fun updateLocation(gpsLoc: Location) {
         if (status == EmitterStatus.STATUS_BLACKLISTED) return
+        if (lastObservation?.suspect == true) {
+            if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because last observation is suspect")
+            return
+        }
 
         // don't update location if there is more than 10 sec difference between last observation
         // and gps location (because we might have moved considerably during this time)
@@ -218,7 +226,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
                     || approximateDistance(gpsLoc.latitude, gpsLoc.longitude, cov.center_lat, cov.center_lon)
                             < (type.getRfCharacteristics().maximumRange + gpsLoc.accuracy) * 2)
             ) {
-            if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location inaccurate.")
+            if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location inaccurate. accuracy ${gpsLoc.accuracy}, required ${ourCharacteristics.requiredGpsAccuracy}")
             return
         }
         if (cov == null) {
@@ -262,7 +270,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
 
             // Use time and asu based on most recent observation
             return RfLocation(observation.lastUpdateTimeMs, observation.elapsedRealtimeNanos,
-                cov.center_lat, cov.center_lon, radius, observation.asu, type)
+                cov.center_lat, cov.center_lon, radius, observation.asu, type, observation.suspect)
         }
 
     /**
@@ -365,6 +373,7 @@ private val DEBUG = BuildConfig.DEBUG
 private const val TAG = "DejaVu RfEmitter"
 
 // Tag/names for additional information on location records
+// todo: remove, those were only used because "location" class was used to transfer data
 const val LOC_RF_ID = "rfid"
 const val LOC_RF_TYPE = "rftype"
 const val LOC_ASU = "asu"
@@ -373,7 +382,7 @@ const val LOC_MIN_COUNT = "minCount"
 private val splitRegex = "[^a-z]".toRegex() // for splitting SSID into "words"
 // use hashSets for fast blacklist*.contains() check
 private val blacklistWords = hashSetOf(
-    "android", "androidap", "ipad", "phone", "motorola", "huawei", // mobile tethering
+    "android", "ipad", "phone", "motorola", "huawei", "iphone", // mobile tethering
     "mobile", // sounds like name for mobile hotspot
     "deinbus", "ecolines", "eurolines", "fernbus", "flixbus", "muenchenlinie",
     "postbus", "skanetrafiken", "oresundstag", "regiojet", // transport
@@ -388,7 +397,7 @@ private val blacklistWords = hashSetOf(
     "bmw", // examples: BMW98303 CarPlay, My BMW Hotspot 8303, DIRECT-BMW 67727
 )
 private val blacklistStartsWith = hashSetOf(
-    "moto ", "samsung galaxy", "lg aristo", // mobile tethering
+    "moto ", "samsung galaxy", "lg aristo", "androidap", // mobile tethering
     "cellspot", // T-Mobile US portable cell based WiFi
     "verizon", // Verizon mobile hotspot
 
@@ -425,20 +434,6 @@ private val blacklistEquals = hashSetOf(
     "svciob", "oebb", "oebb-postbus", "dpmbfree", "telekom_ice", "db ic bus", // transport
 )
 
-enum class EmitterType {
-    INVALID,
-    WLAN2,
-    WLAN5,
-    WLAN6,
-    BT,
-    GSM,
-    CDMA,
-    WCDMA,
-    TDSCDMA,
-    LTE,
-    NR,
-}
-
 enum class EmitterStatus {
     STATUS_UNKNOWN,     // Newly discovered emitter, no data for it at all
     STATUS_NEW,         // Not in database but we've got location data for it
@@ -459,7 +454,9 @@ data class RfLocation(
     val radius: Double,
     /** asu of most recent observation */
     val asu: Int,
-    val type: EmitterType
+    val type: EmitterType,
+    /** whether we suspect the most recent observation might not be entirely correct */
+    val suspect: Boolean,
 ) {
     /** emitter radius, but at least minimumRange for this EmitterType */
     val accuracyEstimate: Double = radius.coerceAtLeast(type.getRfCharacteristics().minimumRange)

@@ -14,6 +14,8 @@ import java.io.FileInputStream
 
 class SettingsActivity : PreferenceActivity() {
 
+    // TODO 1: nothing of this is actually used
+    // TODO 2: need to exit / restart app after settings changed? check!
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         addPreferencesFromResource(R.xml.preferences)
@@ -29,7 +31,7 @@ class SettingsActivity : PreferenceActivity() {
     }
 
     private fun onClickExport() {
-        // try replacing by action_edit for old apis?
+        // todo: try replacing with action_edit for old api?
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             val fileName = "emitters.csv"
@@ -150,3 +152,7 @@ class SettingsActivity : PreferenceActivity() {
 
 private const val IMPORT_CODE = 6957238
 private const val EXPORT_CODE = 75902745
+
+const val PREF_KALMAN = "pref_kalman"
+const val PREF_MOBILE = "pref_use_cell"
+const val PREF_WIFI = "pref_use_wlan"
