@@ -145,7 +145,8 @@ private fun locationCompatibleWithGroup(location: RfLocation, locGroup: Set<RfLo
     // If the location is within range of all current members of the
     // group, then we are compatible.
     for (other in locGroup) {
-        if (approximateDistance(location.lat, location.lon, other.lat, other.lon) > location.accuracyEstimate + other.accuracyEstimate) {
+        // allow somewhat larger distance than sum of accuracies, looks like results are usually a bit better
+        if (approximateDistance(location.lat, location.lon, other.lat, other.lon) > (location.accuracyEstimate + other.accuracyEstimate) * 1.25) {
             return false
         }
     }
@@ -247,54 +248,9 @@ private fun weightedVariance(weightedMeanPosition: Double, positions: DoubleArra
 
     // this is not really variance, but still similar enough to claim it is
     // dividing by size should be fine...
-    return weightedVarianceSum / weights.sumOf { it * it } // todo: actually division could be done outside, to only calculate the value once
+    return weightedVarianceSum / weights.sumOf { it * it }
 }
 
-// test functions, maybe to replace other ones, or to be removed soon
-// --------
-// for culling allowing more distance between emitters
-fun culledEmittersFactor(locations: Collection<RfLocation>, factor: Double): Set<RfLocation>? {
-    divideInGroupsFactor(locations, factor).maxByOrNull { it.size }?.let { result ->
-        // if we only have one location, use it as long as it's not an invalid emitter
-        if (locations.size == 1 && result.single().type != EmitterType.INVALID) {
-            if (DEBUG) Log.d(TAG, "culledEmitters() - got only one location, use it")
-            return result
-        }
-        // Determine minimum count for a valid group of emitters.
-        // The RfEmitter class will have put the min count into the location
-        // it provided.
-        result.forEach {
-            if (result.size >= it.type.getRfCharacteristics().minCount)
-                return result
-        }
-        if (DEBUG) Log.d(TAG, "culledEmitters() - only got ${result.size}, but " +
-                "${result.minByOrNull { it.type.getRfCharacteristics().minCount }} are required")
-    }
-    return null
-}
-private fun divideInGroupsFactor(locations: Collection<RfLocation>, factor: Double): List<MutableSet<RfLocation>> {
-    // Create bins
-    val bins = locations.map { hashSetOf(it) }
-    for (location in locations) {
-        for (locationGroup in bins) {
-            if (locationCompatibleWithGroupFactor(location, locationGroup, factor)) {
-                locationGroup.add(location)
-            }
-        }
-    }
-    return bins
-}
-private fun locationCompatibleWithGroupFactor(location: RfLocation, locGroup: Set<RfLocation>, factor: Double): Boolean {
-    // If the location is within range of all current members of the
-    // group, then we are compatible.
-    for (other in locGroup) {
-        if (approximateDistance(location.lat, location.lon, other.lat, other.lon) > (location.accuracyEstimate + other.accuracyEstimate) * factor) {
-            return false
-        }
-    }
-    return true
-}
-//--------
 // weighted average with removing outliers (more than 2 accuracies away from weighted center)
 // no, then an outlier may still destroy the center
 // need median center!
@@ -316,7 +272,7 @@ fun Collection<RfLocation>.medianCull(): Collection<RfLocation>? {
     val latMedian = listToUse.map { it.lat }.median()
     val lonMedian = listToUse.map { it.lon }.median()
     val avgOfThose = filter { approximateDistance(latMedian, lonMedian, it.lat, it.lon) < 2 * it.accuracyEstimate }
-        .takeIf { any { it.type in shortRangeEmitterTypes } || this.none { it.type in shortRangeEmitterTypes } } ?: this
+        .takeIf { it.any { it.type in shortRangeEmitterTypes } || this.none { it.type in shortRangeEmitterTypes } } ?: this
     Log.d(TAG, "medianCull() - using ${avgOfThose.size} of initially $size locations")
     return avgOfThose.ifEmpty { this }
 }
@@ -343,9 +299,10 @@ fun Collection<RfLocation>.newThing(): Collection<RfLocation>? {
             return weightedMean(latitudes, weights) to weightedMean(longitudes, weights)
         }
         // todo: shortcut if sizes are the same
+        //  and actually i should do weighted average here... but that's even slower
         val medianMean = meanPos(medianCull)
         val noCullMean = meanPos(this)
-        val normalCullMean = culledEmittersFactor(this, 1.2)?.let { meanPos(it) }
+        val normalCullMean = culledEmitters(this)?.let { meanPos(it) }
 
         // now we have the 3 locations, use the one closest to the center
         // todo: this is horribly un-optimized
@@ -368,4 +325,29 @@ fun Collection<RfLocation>.newThing(): Collection<RfLocation>? {
             Log.d(TAG, "newThing: not using medianCull")
         return l
     } else return medianCull
+}
+
+// this is medianCull, but falls back to normal cull in some cases
+fun Collection<RfLocation>.newerThing(): Collection<RfLocation>? {
+    if (isEmpty()) return null
+    // use trustworthy wifi results for median location, but only if at least 2
+    // if we have less than 2 results, also use suspect results
+    // if even then we have less than 2 results, use all
+    val listToUse = filter { it.type in shortRangeEmitterTypes && !it.suspect }
+        .let { goodList ->
+            if (goodList.size >= 2) goodList
+            else this.filter { it.type in shortRangeEmitterTypes }
+                .let { okList ->
+                    if (okList.size >= 2) okList
+                    else this
+                }
+        }
+    val latMedian = listToUse.map { it.lat }.median()
+    val lonMedian = listToUse.map { it.lon }.median()
+    val avgOfThose = filter { approximateDistance(latMedian, lonMedian, it.lat, it.lon) < 2 * it.accuracyEstimate }
+        // require: don't remove all wifis if there were any, and have at least 70% of original size
+        .takeIf { (it.any { it.type in shortRangeEmitterTypes } || this.none { it.type in shortRangeEmitterTypes }) && it.size * 10 >= size * 10 }
+        ?: culledEmitters(this)
+    Log.d(TAG, "newerThing() - using ${avgOfThose?.size} of initially $size locations")
+    return avgOfThose?.ifEmpty { culledEmitters(this) }
 }

@@ -52,7 +52,7 @@ class BackendService : LocationBackendService() {
     private var wifiBroadcastReceiverRegistered = false
     private var permissionsOkay = true
 
-    private val wifiScanInProgress = AtomicBoolean(false) // todo: maybe i can switch back to a normal boolean?
+    @Volatile private var wifiScanInProgress = false
     private var telephonyManager: TelephonyManager? = null
     private val wifiManager: WifiManager by lazy { applicationContext.getSystemService(WIFI_SERVICE) as WifiManager }
     private val wifiBroadcastReceiver: BroadcastReceiver = object : BroadcastReceiver() {
@@ -62,12 +62,12 @@ class BackendService : LocationBackendService() {
                 wifiJob = scope.launch {
                     onWiFisChanged()
                     if (DEBUG) Log.d(TAG, "onReceive: gathered WiFi scan results, to be processed in background")
-                    wifiScanInProgress.set(false) // definitely set after observations are queued for processing
+                    wifiScanInProgress = false // definitely set after observations are queued for processing
                 }
             else {
                 if (DEBUG) Log.d(TAG, "onReceive: received WiFi scan result intent, but scan not successful")
                 nextWlanScanTime = 0 // no need to block scans on failed attempt
-                wifiScanInProgress.set(false)
+                wifiScanInProgress = false
             }
         }
     }
@@ -126,7 +126,7 @@ class BackendService : LocationBackendService() {
         nextMobileScanTime = 0
         nextWlanScanTime = 0
         wifiBroadcastReceiverRegistered = false
-        wifiScanInProgress.set(false)
+        wifiScanInProgress = false
         if (emitterCache == null) emitterCache = Cache(this)
         permissionsOkay = true
         prefs = PreferenceManager.getDefaultSharedPreferences(applicationContext)
@@ -317,11 +317,11 @@ class BackendService : LocationBackendService() {
             return false
         }
         // in case wifi scan doesn't return anything for a long time we simply allow starting another one
-        if (!wifiScanInProgress.get() || currentProcessTime > nextWlanScanTime + 2 * WLAN_SCAN_INTERVAL) {
+        if (!wifiScanInProgress || currentProcessTime > nextWlanScanTime + 2 * WLAN_SCAN_INTERVAL) {
             if (canScanWifi && wifiScanEnabled) {
                 if (DEBUG) Log.d(TAG, "startWiFiScan() - Starting WiFi collection.")
                 nextWlanScanTime = currentProcessTime + WLAN_SCAN_INTERVAL
-                wifiScanInProgress.set(true)
+                wifiScanInProgress = true
                 wifiManager.startScan()
                 return true
             } else if (DEBUG) Log.d(TAG, "startWiFiScan() - WiFi scan is disabled or not possible.")
@@ -685,17 +685,21 @@ class BackendService : LocationBackendService() {
         periodicProcessing = scope.launch(Dispatchers.IO) { // IO because it's mostly waiting
             delay(REPORTING_INTERVAL)
             // delay a bit more if wifi scan is still running
-            if (wifiScanInProgress.get()) {
+            if (wifiScanInProgress) {
                 if (DEBUG) Log.d(TAG, "startProcessingPeriodIfNecessary: Delaying endOfPeriodProcessing because WiFi scan in progress")
                 val waitUntil = nextWlanScanTime + 1000 // delay at max until 1 sec after wifi scan should be finished
                 while (SystemClock.elapsedRealtime() < waitUntil) {
                     delay(50)
-                    if (!wifiScanInProgress.get()) {
+                    if (!wifiScanInProgress) {
                         if (DEBUG) Log.d(TAG, "startProcessingPeriodIfNecessary: wifi scan done, stop waiting")
                         break
                     }
                 }
             }
+            // todo: use join() to properly deal with the background stuff!
+//            wifiJob.join()
+//            mobileJob.join()
+//            backgroundJob.join()
             scope.launch(Dispatchers.Default) { endOfPeriodProcessing() } // default because mostly processing
         }
     }
@@ -762,7 +766,7 @@ class BackendService : LocationBackendService() {
         //  currently newThing looks really good
         val locations = getRfLocations(seenSet)
 //        val weightedAverageLocation = locations.newThing()?.weightedAverage()
-        val weightedAverageLocation = culledEmittersFactor(locations, 1.2)?.weightedAverage()
+        val weightedAverageLocation = culledEmitters(locations)?.weightedAverage()
         if (weightedAverageLocation != null && notNullIsland(weightedAverageLocation)) {
             if (DEBUG) Log.d(TAG, "endOfPeriodProcessing(): reporting location")
             report(weightedAverageLocation)
@@ -770,14 +774,14 @@ class BackendService : LocationBackendService() {
             // lon positive: alternative puts me further west
             val weightedNoCull = locations.weightedAverage()
             Log.i(TAG, "avg (${weightedAverageLocation.accuracy}) minus noCull loc (${weightedNoCull.accuracy}): lat ${(weightedAverageLocation.latitude - weightedNoCull.latitude)* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - weightedNoCull.longitude) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
-            val weightedThirdCull = culledEmittersFactor(locations, 1.5)?.weightedAverage()
-            Log.i(TAG, "avg (${weightedAverageLocation.accuracy}) minus 1.5Cull loc (${weightedThirdCull?.accuracy}): lat ${(weightedAverageLocation.latitude - (weightedThirdCull?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (weightedThirdCull?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
-            val weightedOriginal = culledEmitters(locations)?.weightedAverage()
-            Log.i(TAG, "avg (${weightedAverageLocation.accuracy}) minus weightedOriginal loc (${weightedOriginal?.accuracy}): lat ${(weightedAverageLocation.latitude - (weightedOriginal?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (weightedOriginal?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
+//            val weightedOriginal = culledEmitters(locations)?.weightedAverage()
+//            Log.i(TAG, "avg (${weightedAverageLocation.accuracy}) minus weightedOriginal loc (${weightedOriginal?.accuracy}): lat ${(weightedAverageLocation.latitude - (weightedOriginal?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (weightedOriginal?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
             val medianCull = locations.medianCull()?.weightedAverage()
             Log.i(TAG, "avg (${weightedAverageLocation.accuracy}) minus medianCull loc (${medianCull?.accuracy}): lat ${(weightedAverageLocation.latitude - (medianCull?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (medianCull?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
-            val newThing = locations.medianCull()?.weightedAverage()
+            val newThing = locations.newThing()?.weightedAverage()
             Log.i(TAG, "avg (${weightedAverageLocation.accuracy}) minus newThing loc (${newThing?.accuracy}): lat ${(weightedAverageLocation.latitude - (newThing?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (newThing?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
+            val newerThing = locations.newerThing()?.weightedAverage()
+            Log.i(TAG, "avg (${weightedAverageLocation.accuracy}) minus newerThing loc (${newerThing?.accuracy}): lat ${(weightedAverageLocation.latitude - (newerThing?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (newerThing?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
         } else
             if (DEBUG) Log.d(TAG, "endOfPeriodProcessing(): no location to report")
 

@@ -71,7 +71,7 @@ fun EmitterType.getRfCharacteristics(): RfCharacteristics =
 // However we've seem really, really long range detection in rural areas
 // so base the move distance on that.
 private val characteristicsWlan24 = RfCharacteristics(
-    15F * METERS,
+    16F * METERS,
     35.0 * METERS,
     300.0 * METERS,  // Seen pretty long detection in very rural areas
     2
