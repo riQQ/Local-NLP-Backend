@@ -1,24 +1,57 @@
 package org.fitchfamily.android.dejavu
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
+import android.content.SharedPreferences
 import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
 import android.os.Bundle
-import android.preference.Preference
 import android.preference.PreferenceActivity
-import android.preference.PreferenceFragment
-import android.support.v4.app.FragmentActivity
+import android.preference.PreferenceManager
 import java.io.File
-import java.io.FileInputStream
 
 class SettingsActivity : PreferenceActivity() {
 
-    // TODO 1: nothing of this is actually used
+    // TODO 1: nothing of this is actually used, except for the listener
     // TODO 2: need to exit / restart app after settings changed? check!
+
+    private var settingsChanged = false
+    private val prefs: SharedPreferences by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
+    private val listener = SharedPreferences.OnSharedPreferenceChangeListener {_, key ->
+        settingsChanged = true
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         addPreferencesFromResource(R.xml.preferences)
+        findPreference(PREF_CULL)?.setOnPreferenceClickListener {
+            onClickCull()
+            true
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
+        if (settingsChanged)
+            BackendService.instance?.onClose()
+    }
+
+    private fun onClickCull() {
+        // todo: make a nicer radio button menu, with current selection being shown
+        AlertDialog.Builder(this)
+            .setTitle(R.string.pref_cull_title)
+            .setMessage(R.string.pref_cull_message)
+            .setPositiveButton(R.string.pref_cull_default) { _,_ -> prefs.edit().putInt(PREF_CULL, 0).apply() }
+            .setNeutralButton(R.string.pref_cull_median) { _,_ -> prefs.edit().putInt(PREF_CULL, 1).apply() }
+            .setNegativeButton(R.string.pref_cull_none) { _,_ -> prefs.edit().putInt(PREF_CULL, 2).apply() }
+            .show()
     }
 
     private fun onClickImport() {
@@ -50,7 +83,7 @@ class SettingsActivity : PreferenceActivity() {
 
     private fun importFile(uri: Uri) {
         // determine what file we have
-        val f = File(applicationContext?.applicationInfo?.dataDir + File.separator + "temp_import_file")
+        val f = File(this.applicationInfo.dataDir + File.separator + "temp_import_file")
         val inputStream = contentResolver?.openInputStream(uri) ?: return
         f.outputStream().use {
             inputStream.copyTo(it)
@@ -71,7 +104,7 @@ class SettingsActivity : PreferenceActivity() {
         val collisionKeep = SQLiteDatabase.CONFLICT_IGNORE
         val collisionMerge = 0
         BackendService.instance?.onClose()
-        val db = Database(applicationContext)
+        val db = Database(this)
         db.beginTransaction()
         f.inputStream().use {
             var line = readLine()
@@ -131,7 +164,7 @@ class SettingsActivity : PreferenceActivity() {
     private fun exportToFile(uri: Uri) {
         val os = contentResolver?.openOutputStream(uri)?.bufferedWriter() ?: return
         BackendService.instance?.onClose()
-        val db = Database(applicationContext)
+        val db = Database(this)
         db.writeAllToCsv { os.write(it + "\n") }
         os.close()
         db.close()
@@ -156,3 +189,5 @@ private const val EXPORT_CODE = 75902745
 const val PREF_KALMAN = "pref_kalman"
 const val PREF_MOBILE = "pref_use_cell"
 const val PREF_WIFI = "pref_use_wlan"
+const val PREF_BUILD = "build"
+const val PREF_CULL = "pref_cull"

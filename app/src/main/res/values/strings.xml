@@ -8,12 +8,22 @@
     <string name="pref_export_title">Export data</string>
     <string name="pref_export_summary">Write all data to CSV file</string>
     <string name="pref_kalman_title">Use Kalman filter for GPS location</string>
-    <string name="pref_kalman_summary">Recommended for devices with bad GPS, but may lead to many GPS locations being ignored</string>
+    <string name="pref_kalman_summary">Recommended for devices with bad GPS</string>
     <string name="pref_use_cell_title">Use cell tower locations</string>
     <string name="pref_use_cell_summary">When disabled, scans for cell towers will not happen</string>
     <string name="pref_use_wlan_title">Use WiFi locations</string>
     <string name="pref_use_wlan_summary">When disabled, WiFi scans will not happen</string>
     <string name="pref_show_emitters_title">Show nearby emitters</string>
     <string name="pref_show_emitters_summary">Scans for emitters and displays result with additional information</string>
+    <string name="pref_cull_title">Discard bad emitters</string>
+    <string name="pref_cull_summary">Decide which emitters should be discarded in case of inconsistent locations</string>
+    <string name="pref_cull_message">Default: only use the largest consistent group of emitters. This usually gives good accuracy, but occasionally produces wrong locations.
+Median: discard emitters that are unbelievably far from the median location: worse accuracy than default, but actual location is inside the accuracy circle more often.
+Use all emitters: sensitive to extreme outliers and often the least accurate of the three, but most likely to contain the actual location inside the accuracy circle.
+Often all 3 methods give (nearly) the same results, expect to see a difference only in some cases.
+    </string>
+    <string name="pref_cull_default">Default</string>
+    <string name="pref_cull_median">Median</string>
+    <string name="pref_cull_none">Use all</string>
 
 </resources>

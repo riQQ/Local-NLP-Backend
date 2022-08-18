@@ -22,8 +22,8 @@ package org.fitchfamily.android.dejavu
 
 import android.content.Context
 import android.util.Log
-import java.util.HashMap
-import java.util.HashSet
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 
 /**
  * Created by tfitch on 10/4/17.
@@ -68,8 +68,8 @@ internal class Cache(context: Context?) {
         synchronized(this) {
             sync()
             this.clear()
-            db!!.close()
-            db = null // todo: have some db.closed instead of nullable crap?
+            db?.close()
+            db = null
         }
     }
 
@@ -101,15 +101,21 @@ internal class Cache(context: Context?) {
      *
      * This is a performance improvement over loading emitters on get(),
      * as all emitters are loaded in a single db query.
+     * Emitters not loaded from db are still added to the working set. This is done
+     * because usually [get] is called on each id after loading, and adding a new
+     * id requires synchronized, which my be a bit slow.
      */
     fun loadIds(ids: Collection<RfIdentification>) {
-        if (db == null) return
         val idsToLoad = ids.filterNot { workingSet.containsKey(it.uniqueId) }
         if (DEBUG) Log.d(TAG, "loadIds() - Fetching ${idsToLoad.size} ids not in working set from db.")
         if (idsToLoad.isEmpty()) return
         synchronized(this) {
-            val emitters = db!!.getEmitters(idsToLoad)
-            workingSet.putAll(emitters.associateBy { it.uniqueId })
+            val emitters = db?.getEmitters(idsToLoad) ?: return
+            emitters.forEach { workingSet[it.uniqueId] = it }
+            idsToLoad.forEach {
+                if (!workingSet.containsKey(it.uniqueId))
+                    workingSet[it.uniqueId] = RfEmitter(it)
+            }
         }
     }
 
@@ -130,36 +136,38 @@ internal class Cache(context: Context?) {
      * our cache.
      */
     fun sync() {
-        if (db == null)
-            return
-
-        // Scan all of our emitters to see
-        // 1. If any have dirty data to sync to the flash database
-        // 2. If any have been unused long enough to remove from cache
-        val agedSet = HashSet<RfIdentification>()
-        workingSet.values.forEach {
-            if (it.age >= MAX_AGE)
-                agedSet.add(it.rfIdentification)
-            it.incrementAge()
-        }
+        if (db == null) return
 
         synchronized(this) {
-            val emittersInNeedOfSync = workingSet.values.filter { it.syncNeeded() }
-            if (emittersInNeedOfSync.isNotEmpty()) {
+            // Scan all of our emitters to see
+            // 1. If any have dirty data to sync to the flash database
+            // 2. If any have been unused long enough to remove from cache
+            val agedEmitters = mutableListOf<RfIdentification>()
+            val emittersInNeedOfSync = mutableListOf<RfEmitter>()
+            workingSet.values.forEach {
+                if (it.age >= MAX_AGE)
+                    agedEmitters.add(it.rfIdentification)
+                it.incrementAge()
+                if (it.syncNeeded())
+                    emittersInNeedOfSync.add(it)
+            }
+
+            if (emittersInNeedOfSync.isNotEmpty()) db?.let { db ->
                 if (DEBUG) Log.d(TAG, "sync() - syncing ${emittersInNeedOfSync.size} emitters with db")
-                db!!.beginTransaction()
+                db.beginTransaction()
                 emittersInNeedOfSync.forEach {
-                    it.sync(db!!)
+                    it.sync(db)
                 }
-                db!!.endTransaction()
+                db.endTransaction()
             }
 
             // Remove aged out items from cache
-            agedSet.forEach {
+            agedEmitters.forEach {
                 workingSet.remove(it.uniqueId)
                 if (DEBUG) Log.d(TAG, "sync('${it.uniqueId}') - Aged out, removed from cache.")
             }
 
+            // clear cache is we have really a lot of emitters cached
             if (workingSet.size > MAX_WORKING_SET_SIZE) {
                 if (DEBUG) Log.d(TAG, "sync() - Working set larger than $MAX_WORKING_SET_SIZE, clearing working set.")
                 workingSet.clear()

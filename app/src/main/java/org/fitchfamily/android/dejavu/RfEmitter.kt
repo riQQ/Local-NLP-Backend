@@ -21,7 +21,6 @@ package org.fitchfamily.android.dejavu
 */
 
 import android.location.Location
-import android.os.Bundle
 import android.util.Log
 import org.fitchfamily.android.dejavu.EmitterType.*
 import kotlin.math.abs
@@ -63,7 +62,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
     }
 
     private val ourCharacteristics = type.getRfCharacteristics()
-    private var coverage: BoundingBox? = null // null for new or blacklisted emitters
+    var coverage: BoundingBox? = null // null for new or blacklisted emitters
     var note: String = ""
         set(value) {
             if (field == value)
@@ -202,8 +201,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
      */
     fun updateLocation(gpsLoc: Location) {
         if (status == EmitterStatus.STATUS_BLACKLISTED) return
-        if (lastObservation?.suspect == true) {
-            if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because last observation is suspect")
+        if (lastObservation?.suspicious == true) {
+            if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because last observation is suspicious")
             return
         }
 
@@ -270,7 +269,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
 
             // Use time and asu based on most recent observation
             return RfLocation(observation.lastUpdateTimeMs, observation.elapsedRealtimeNanos,
-                cov.center_lat, cov.center_lon, radius, observation.asu, type, observation.suspect)
+                cov.center_lat, cov.center_lon, radius, observation.asu, type, observation.suspicious)
         }
 
     /**
@@ -372,13 +371,6 @@ private val DEBUG = BuildConfig.DEBUG
 
 private const val TAG = "DejaVu RfEmitter"
 
-// Tag/names for additional information on location records
-// todo: remove, those were only used because "location" class was used to transfer data
-const val LOC_RF_ID = "rfid"
-const val LOC_RF_TYPE = "rftype"
-const val LOC_ASU = "asu"
-const val LOC_MIN_COUNT = "minCount"
-
 private val splitRegex = "[^a-z]".toRegex() // for splitting SSID into "words"
 // use hashSets for fast blacklist*.contains() check
 private val blacklistWords = hashSetOf(
@@ -413,7 +405,7 @@ private val blacklistStartsWith = hashSetOf(
     "taxilinq", "transitwirelesswifi", // transport, maybe move some to words?
     "yicarcam", // Dashcam WiFi.
     "my seat", // My SEAT 741
-    "vw_wlan", // VW WLAN 9266
+    "vw wlan", // VW WLAN 9266
     "my vw", // My VW 4025
     "my skoda", // My Skoda 3358
     "skoda_wlan", // Skoda_WLAN_5790
@@ -456,7 +448,7 @@ data class RfLocation(
     val asu: Int,
     val type: EmitterType,
     /** whether we suspect the most recent observation might not be entirely correct */
-    val suspect: Boolean,
+    val suspicious: Boolean,
 ) {
     /** emitter radius, but at least minimumRange for this EmitterType */
     val accuracyEstimate: Double = radius.coerceAtLeast(type.getRfCharacteristics().minimumRange)

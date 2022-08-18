@@ -184,7 +184,6 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
         db.execSQL("COMMIT;")
     }
 
-    // todo: undo/remove v4 upgrade
     private fun upGradeToVersion4(db: SQLiteDatabase) {
         // another upgrade
         // remove hash column

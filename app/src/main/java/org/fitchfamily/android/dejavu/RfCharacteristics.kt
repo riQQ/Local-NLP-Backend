@@ -46,7 +46,7 @@ enum class EmitterType {
 private const val METERS: Float = 1.0f
 private const val KM = METERS * 1000
 
-val shortRangeEmitterTypes = arrayOf(EmitterType.WLAN5, EmitterType.WLAN6, EmitterType.WLAN2, EmitterType.BT)
+val shortRangeEmitterTypes = hashSetOf(EmitterType.WLAN5, EmitterType.WLAN6, EmitterType.WLAN2, EmitterType.BT)
 
 /**
  * Given an emitter type, return the various characteristics we need to know
@@ -78,7 +78,7 @@ private val characteristicsWlan24 = RfCharacteristics(
 )
 
 private val characteristicsWlan5 = RfCharacteristics(
-    7F * METERS, // todo: set to 10 if using kalman? 7 appears to be impossible... even better than 10 is very rare
+    7F * METERS,
     15.0 * METERS,
     100.0 * METERS,  // Seen pretty long detection in very rural areas
     2
@@ -111,6 +111,7 @@ private val characteristicsLte = RfCharacteristics(
 )
 
 // todo: 5G millimeter wave have less than 500 m range, but how to separate from "other" 5G?
+//  could be getBands (band > 250) or getNrarfcn (more complicated it seems)
 private val characteristics5Gmm = RfCharacteristics(
     20F * METERS,
     50.0 * METERS,

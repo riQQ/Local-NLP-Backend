@@ -6,7 +6,7 @@
         android:key="pref_kalman"
         android:title="@string/pref_kalman_title"
         android:summary="@string/pref_kalman_summary"
-        android:defaultValue="true" />
+        android:defaultValue="false" />
     <CheckBoxPreference
         android:key="pref_use_cell"
         android:title="@string/pref_use_cell_title"
@@ -17,6 +17,10 @@
         android:title="@string/pref_use_wlan_title"
         android:summary="@string/pref_use_wlan_summary"
         android:defaultValue="true" />
+    <Preference
+        android:key="pref_cull"
+        android:title="@string/pref_cull_title"
+        android:summary="@string/pref_cull_summary" />
     <Preference
         android:key="pref_import"
         android:title="@string/pref_import_title"
