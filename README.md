@@ -19,20 +19,20 @@ Changes:
 * the blacklist is extended and now actually used
 * emitters with invalid LAC are ignored
 * emitters with suspiciously high radius (probably moving WiFis) are blacklisted
-* fixed a bug in BoundingBox
+* fixed a bug in BoundingBox and WeightedAverage
 * try waiting for WiFi scan to finish before reporting position, to avoid reporting low accuracy mobile tower location immediately followed by more precise WiFi-based location
 * don't use outdated results from failed or throttled WiFi scans that could result in wrong location reports
-* faster, but less exact distance calculations. For the used distances up to 100 km, the differences are negligible.
+* faster, but slightly less exact distance calculations. For the used distances up to 100 km, the differences are negligible.
 * avoid large time differences between GPS locations and emitter scan, so emitters are located at the correct position
 * consider that LTE and 3G cells are usually smaller than GSM cells
 * consider signal intensity when estimating location accuracy
+* added UI for import/export and some further settings 
 * change icon
 * many internal changes
 * probably more...
 
 Further plans:
 * find and fix potential bugs
-* UI for import/export and maybe more
 * update to newer API. This means some old method for detecting mobile towers will be removed, and may break tower detection on some old devices.
 * detect 5G emitters and maybe more types
 

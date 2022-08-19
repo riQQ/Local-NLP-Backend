@@ -457,34 +457,39 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
         return result
     }
 
-    fun writeAllToCsv(write: (String) -> Unit) {
-        // write header
-        write("database v4")
-        write("$COL_RFID,$COL_TYPE,$COL_LAT,$COL_LON,$COL_RAD_NS,$COL_RAD_EW,$COL_NOTE")
+    fun getAll(): Sequence<RfEmitter> {
         val query = ("SELECT " +
-                COL_RFID + ", " +
                 COL_TYPE + ", " +
                 COL_LAT + ", " +
                 COL_LON + ", " +
                 COL_RAD_NS + ", " +
                 COL_RAD_EW + ", " +
-                COL_NOTE +
+                COL_NOTE + ", " +
+                COL_RFID + " " +
                 " FROM " + TABLE_SAMPLES + ";")
 
-        val c = database.rawQuery(query, null)
-        c.use { cursor ->
-            if (cursor!!.moveToFirst()) {
-                do {
-                    val rfId = cursor.getString(0)
-                    val type = cursor.getString(1) // todo: actually no need to write type to the csv, decide before release (also need to adjust columns printed in second line)
-                    val lat = cursor.getDouble(2)
-                    val lon = cursor.getDouble(3)
-                    val radius_ns = cursor.getDouble(4)
-                    val radius_ew = cursor.getDouble(5)
-                    val note = cursor.getString(6) ?: ""
-                    write("$rfId,$type,$lat,$lon,$radius_ns,$radius_ew,$note")
-                } while (cursor.moveToNext())
-            }
+        val c = database.rawQuery(query, null) // db is closed afterwards, so not freeing should not matter
+        return generateSequence {
+            if (c.moveToNext()) {
+                val info = EmitterInfo(
+                    latitude = c.getDouble(1),
+                    longitude = c.getDouble(2),
+                    radius_ns = c.getDouble(3),
+                    radius_ew = c.getDouble(4),
+                    note = c.getString(5) ?: ""
+                )
+                try {
+                    EmitterType.valueOf(c.getString(0))
+                } catch(e: IllegalArgumentException) {
+                    null
+                }?.let {
+                    RfEmitter(
+                        getRfId(
+                            c.getString(6),
+                            EmitterType.valueOf(c.getString(0))
+                        ), info)
+                }
+            } else null
         }
     }
 
@@ -498,8 +503,8 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
             put(COL_RAD_EW, radius_ew)
             put(COL_NOTE, note)
         }
-        if (collision == 0 && database.insert(TABLE_SAMPLES, null, cv) == -1L) {
-            // trying to insert, but row exists and we specify merge
+        if (collision == 0 && database.insertWithOnConflict(TABLE_SAMPLES, null, cv, SQLiteDatabase.CONFLICT_IGNORE) == -1L) { // -1 is returned if a conflict is detected
+            // trying to insert, but row exists and we want to merge
             val bboxOld: BoundingBox
             database.rawQuery("SELECT $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW FROM $TABLE_SAMPLES WHERE $COL_RFID = '$rfId';", null). use {
                 it.moveToFirst()
@@ -519,7 +524,7 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
                 put(COL_NOTE, note)
             }
             database.insertWithOnConflict(TABLE_SAMPLES, null, cv2, SQLiteDatabase.CONFLICT_REPLACE)
-        } else
+        } else if (collision != 0)
             database.insertWithOnConflict(TABLE_SAMPLES, null, cv, collision)
     }
 
@@ -528,14 +533,14 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
         private val DEBUG = BuildConfig.DEBUG
         private const val VERSION = 4
         const val NAME = "rf.db"
-        private const val TABLE_SAMPLES = "emitters"
-        private const val COL_TYPE = "rfType"
-        private const val COL_RFID = "rfID"
-        private const val COL_LAT = "latitude"
-        private const val COL_LON = "longitude"
-        private const val COL_RAD_NS = "radius_ns" // v2 of database
-        private const val COL_RAD_EW = "radius_ew" // v2 of database
-        private const val COL_NOTE = "note"
+        const val TABLE_SAMPLES = "emitters"
+        const val COL_TYPE = "rfType"
+        const val COL_RFID = "rfID"
+        const val COL_LAT = "latitude"
+        const val COL_LON = "longitude"
+        const val COL_RAD_NS = "radius_ns" // v2 of database
+        const val COL_RAD_EW = "radius_ew" // v2 of database
+        const val COL_NOTE = "note"
 
         // columns used in old db versions
         private const val OLD_COL_HASH = "rfHash" // v3 of database, removed in v4

@@ -3,10 +3,8 @@
     <string name="summary">A microG/UnifiedNlp location provider backend using private on phone RF emitter database</string>
 
     <!-- settings -->
-    <string name="pref_import_title">Import data</string>
-    <string name="pref_import_summary">CSV created from export, Déjà Vu database, MLS export</string>
     <string name="pref_export_title">Export data</string>
-    <string name="pref_export_summary">Write all data to CSV file</string>
+    <string name="pref_export_summary">Write all data to a CSV file</string>
     <string name="pref_kalman_title">Use Kalman filter for GPS location</string>
     <string name="pref_kalman_summary">Recommended for devices with bad GPS</string>
     <string name="pref_use_cell_title">Use cell tower locations</string>
@@ -25,5 +23,14 @@ Often all 3 methods give (nearly) the same results, expect to see a difference o
     <string name="pref_cull_default">Default</string>
     <string name="pref_cull_median">Median</string>
     <string name="pref_cull_none">Use all</string>
+    <string name="pref_import_title">Import data</string>
+    <string name="pref_import_summary">Select CSV created from export, Déjà Vu database or MLS export</string>
+    <string name="import_error_format">Error: file format unknown</string>
+    <string name="import_error_line">Error parsing line %s</string>
+    <string name="import_error_database">Error importing database: %s</string>
+    <string name="import_message">How to handle emitters that already exist in local database?</string>
+    <string name="import_replace">Replace local emitters</string>
+    <string name="import_keep">Keep local emitters unchanged</string>
+    <string name="import_merge">Merge emitters</string>
 
 </resources>
