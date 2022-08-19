@@ -53,6 +53,8 @@ package org.fitchfamily.android.dejavu;
  *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+import static org.fitchfamily.android.dejavu.UtilKt.*;
+
 import android.location.Location;
 import android.os.Bundle;
 import android.os.SystemClock;
@@ -83,7 +85,7 @@ class Kalman {
     /**
      *  Time of last update. Used to determine how stale our position is.
      */
-    private long mTimeOfUpdate;
+    long timeOfUpdate;
 
     /**
      * Number of samples filter has used.
@@ -97,19 +99,19 @@ class Kalman {
 
     public Kalman(Location location, double coordinateNoise) {
         final double accuracy = location.getAccuracy();
-        final double coordinateNoiseDegrees = coordinateNoise * BackendService.METER_TO_DEG;
+        final double coordinateNoiseDegrees = coordinateNoise * METER_TO_DEG;
         double position, noise;
         long timeMs = location.getTime();
 
         // Latitude
         position = location.getLatitude();
-        noise = accuracy * BackendService.METER_TO_DEG;
+        noise = accuracy * METER_TO_DEG;
         mLatTracker = new Kalman1Dim(coordinateNoiseDegrees, timeMs);
         mLatTracker.setState(position, 0.0, noise);
 
         // Longitude
         position = location.getLongitude();
-        noise = accuracy * Math.cos(Math.toRadians(location.getLatitude())) * BackendService.METER_TO_DEG;
+        noise = accuracy * Math.cos(Math.toRadians(location.getLatitude())) * METER_TO_DEG;
         mLonTracker = new Kalman1Dim(coordinateNoiseDegrees, timeMs);
         mLonTracker.setState(position, 0.0, noise);
 
@@ -120,7 +122,7 @@ class Kalman {
             mAltTracker = new Kalman1Dim(ALTITUDE_NOISE, timeMs);
             mAltTracker.setState(position, 0.0, noise);
         }
-        mTimeOfUpdate = timeMs;
+        timeOfUpdate = timeMs;
         samples = 1;
     }
 
@@ -134,17 +136,17 @@ class Kalman {
         long timeMs = location.getTime();
 
         predict(timeMs);
-        mTimeOfUpdate = timeMs;
+        timeOfUpdate = timeMs;
         samples++;
 
         // Latitude
         position = location.getLatitude();
-        noise = accuracy * BackendService.METER_TO_DEG;
+        noise = accuracy * METER_TO_DEG;
         mLatTracker.update(position, noise);
 
         // Longitude
         position = location.getLongitude();
-        noise = accuracy * Math.cos(Math.toRadians(location.getLatitude())) * BackendService.METER_TO_DEG ;
+        noise = accuracy * Math.cos(Math.toRadians(location.getLatitude())) * METER_TO_DEG ;
         mLonTracker.update(position, noise);
 
         // Altitude
@@ -178,8 +180,8 @@ class Kalman {
     }
 
     public synchronized Location getLocation() {
-        Long timeMs = System.currentTimeMillis();
-        final Location location = new Location(BackendService.LOCATION_PROVIDER);
+        long timeMs = System.currentTimeMillis();
+        final Location location = new Location(LOCATION_PROVIDER);
 
         predict(timeMs);
         location.setTime(timeMs);
@@ -189,14 +191,14 @@ class Kalman {
         if (mAltTracker != null)
             location.setAltitude(mAltTracker.getPosition());
 
-        float accuracy = (float) (mLatTracker.getAccuracy() * BackendService.DEG_TO_METER);
+        float accuracy = (float) (mLatTracker.getAccuracy() * DEG_TO_METER);
         if (accuracy < MIN_ACCURACY)
             accuracy = MIN_ACCURACY;
         location.setAccuracy(accuracy);
 
         // Derive speed from degrees/ms in lat and lon
-        double latVeolocity = mLatTracker.getVelocity() * BackendService.DEG_TO_METER;
-        double lonVeolocity = mLonTracker.getVelocity() * BackendService.DEG_TO_METER *
+        double latVeolocity = mLatTracker.getVelocity() * DEG_TO_METER;
+        double lonVeolocity = mLonTracker.getVelocity() * DEG_TO_METER *
                 Math.cos(Math.toRadians(location.getLatitude()));
         float speed = (float) Math.sqrt((latVeolocity*latVeolocity)+(lonVeolocity*lonVeolocity));
         location.setSpeed(speed);

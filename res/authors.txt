@@ -1,0 +1,11 @@
+Geolocation_-_The_Noun_Project.svg
+    author: five by five, https://thenounproject.com/icon//FivebyFive
+    license: CC0 1.0
+    url: https://commons.wikimedia.org/wiki/File:Geolocation_-_The_Noun_Project.svg / https://thenounproject.com/icon/38241
+    used as base for launcher icon
+
+Geolocation_-_The_Noun_Project_mod.svg
+    author: helium314 / five by five
+    license: CC0 1.0
+    modified from Geolocation_-_The_Noun_Project.svg
+    used as launcher icon

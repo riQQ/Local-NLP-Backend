@@ -1,4 +1,37 @@
 <resources>
     <string name="app_name">Déjà Vu Location Service</string>
     <string name="summary">A microG/UnifiedNlp location provider backend using private on phone RF emitter database</string>
+
+    <!-- settings -->
+    <string name="pref_export_title">Export data</string>
+    <string name="pref_export_summary">Write all data to a CSV file</string>
+    <string name="export_jb">Export is only supported on KitKat and above</string>
+    <string name="pref_kalman_title">Use Kalman filter for GPS location</string>
+    <string name="pref_kalman_summary">Recommended for devices with bad GPS</string>
+    <string name="pref_use_cell_title">Use cell tower locations</string>
+    <string name="pref_use_cell_summary">When disabled, scans for cell towers will not happen</string>
+    <string name="pref_use_wlan_title">Use WiFi locations</string>
+    <string name="pref_use_wlan_summary">When disabled, WiFi scans will not happen</string>
+    <string name="pref_show_emitters_title">Show nearby emitters</string>
+    <string name="pref_show_emitters_summary">Scans for emitters and displays result with additional information</string>
+    <string name="pref_cull_title">Discard bad emitters</string>
+    <string name="pref_cull_summary">Decide which emitters should be discarded in case of inconsistent locations</string>
+    <string name="pref_cull_message">Default (used in Déjà Vu): only use the largest consistent group of emitters. This usually gives good accuracy, but occasionally produces wrong locations.\n
+Median: discard emitters that are unbelievably far from the median location: somewhat worse accuracy than default, but reduced chance of wrong locations.\n
+Use all emitters: sensitive to extreme outliers and often the least accurate of the three, but most likely to contain the actual location inside the accuracy circle.\n
+Often all 3 methods give (nearly) the same results, expect to see a difference only in some cases.
+    </string>
+    <string name="pref_cull_default">Default</string>
+    <string name="pref_cull_median">Median</string>
+    <string name="pref_cull_none">Use all</string>
+    <string name="pref_import_title">Import data</string>
+    <string name="pref_import_summary">Select CSV created from export, Déjà Vu database or MLS export</string>
+    <string name="import_error_format">Error: file format unknown</string>
+    <string name="import_error_line">Error parsing line %s</string>
+    <string name="import_error_database">Error importing database: %s</string>
+    <string name="import_message">How to handle emitters that already exist in local database?</string>
+    <string name="import_replace">Replace local emitters</string>
+    <string name="import_keep">Keep local emitters unchanged</string>
+    <string name="import_merge">Merge emitters</string>
+
 </resources>

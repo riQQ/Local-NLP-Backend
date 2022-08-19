@@ -1,12 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-
     package="org.fitchfamily.android.dejavu">
 
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-
 
     <application
         android:icon="@mipmap/ic_launcher"
@@ -16,19 +15,31 @@
         android:theme="@style/AppTheme">
 
         <service
-            android:name="org.fitchfamily.android.dejavu.BackendService"
+            android:name=".BackendService"
             android:label="@string/app_name"
-            android:permission="android.permission.ACCESS_COARSE_LOCATION">
+            android:permission="android.permission.ACCESS_COARSE_LOCATION"
+            android:exported="true">
             <intent-filter>
                 <action android:name="org.microg.nlp.LOCATION_BACKEND" />
             </intent-filter>
+
+            <meta-data
+                android:name="org.microg.nlp.BACKEND_SETTINGS_ACTIVITY"
+                android:value="org.fitchfamily.android.dejavu.SettingsActivity" />
             <meta-data
                 android:name="org.microg.nlp.BACKEND_SUMMARY"
                 android:value="@string/summary" />
         </service>
 
-        <service android:name="org.fitchfamily.android.dejavu.GpsMonitor"
-            android:permission="android.permission.ACCESS_FINE_LOCATION" >
+        <activity
+            android:name=".SettingsActivity"
+            android:launchMode="singleTask"
+            android:exported="true">
+        </activity>
+
+        <service
+            android:name=".GpsMonitor"
+            android:permission="android.permission.ACCESS_FINE_LOCATION">
         </service>
     </application>
 
