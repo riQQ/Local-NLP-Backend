@@ -14,6 +14,28 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Removed
 - Not applicable
 
+## [1.2.0] - 2022-08-19
+### Added
+- UI with capabilities to import/export emitters, select whether to use mobile cells and/or WiFi emitters, enable Kalman position filtering, and decide how to decide which emitters should be discarded in case of conflicting position reports.
+- Blacklist emitters with suspiciously high radius, as they may be mobile.
+- Don't use outdated WiFi scan results if scan is not successful.
+- Consider signal strength when estimating accuracy.
+
+### Changed
+- New app and package names.
+- New icon (modified from: https://thenounproject.com/icon/38241).
+- Some small bug fixes.
+- Update and actually use the WiFi blacklist.
+- Faster, but less exact distance calculations. For the used distances up to 100 km, the differences are negligible.
+- Ignore cell emitters with invalid LAC
+- Try waiting until a WiFi scan is finished before reporting location. This avoids reporting a low accuracy mobile cell location followed by more precise WiFi-based location.
+- Consider that LTE and 3G cells are usually smaller than GSM cells.
+- Don't update emitters when GPS location and emitter timestamps differ by more than 10 seconds. This reduces issues with aggressive power saving functionality by Android.
+
+### Removed
+- Emitters will stay in the database forever, instead of being removed if not found in expected locations. In original *Déjà Vu*, many WiFi emitters are removed when they cannot be found for a while, e.g. because of thick walls. Having useless entries in the database is better than removing actually existing WiFis. Additionally this change reduces database writes and background processing considerably.
+- Emitters will not be moved if they are found far away from their known location, as this mostly leads to bad location reports in connection with mobile hotspots. Instead they are blacklisted.
+
 ## [1.1.12] - 2019-08-12
 
 ### Changed

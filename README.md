@@ -1,4 +1,4 @@
-Déjà Vu - A Local RF Based Backend
+Local NLP Backend - A Déjà Vu Fork
 ==================================
 This is a backend for [UnifiedNlp](https://github.com/microg/android_packages_apps_UnifiedNlp) that uses locally acquired WLAN/WiFi AP and mobile/cellular tower data to resolve user location. Collectively, “WLAN/WiFi and mobile/cellular” signals will be called “RF emitters” below.
 
@@ -8,48 +8,21 @@ The other part is the actual location provider which uses the database to estima
 
 This backend uses no network data. All data acquired by the phone stays on the phone.
 
+<!--
 <a href="https://f-droid.org/packages/org.fitchfamily.android.dejavu/" target="_blank">
 <img src="https://f-droid.org/badge/get-it-on.png" alt="Get it on F-Droid" height="90"/></a>
+-->
 
 Modified version
 ================
-This is a modified version of the *Déjà Vu* backend.
-Changes:
-* emitters are not removed from the database any more. Reason: in original *Déjà Vu*, many WiFis are removed when they could not be found for a while, e.g. because of thick walls. Having useless entries in the database is better than removing actually existing WiFis. Additionally it reduces database writes and background processing considerably.
-* the blacklist is extended and now actually used
-* emitters with invalid LAC are ignored
-* emitters with suspiciously high radius (probably moving WiFis) are blacklisted
-* fixed a bug in BoundingBox and WeightedAverage
-* try waiting for WiFi scan to finish before reporting position, to avoid reporting low accuracy mobile tower location immediately followed by more precise WiFi-based location
-* don't use outdated results from failed or throttled WiFi scans that could result in wrong location reports
-* faster, but slightly less exact distance calculations. For the used distances up to 100 km, the differences are negligible.
-* avoid large time differences between GPS locations and emitter scan, so emitters are located at the correct position
-* consider that LTE and 3G cells are usually smaller than GSM cells
-* consider signal intensity when estimating location accuracy
-* added UI for import/export and some further settings 
-* change icon
-* many internal changes
-* probably more...
+This version has several differences compared to *Déjà Vu*, see the [changelog](https://github.com/helium314/DejaVu/CHANGELOG.md) starting at 1.2.0.
 
-Further plans:
-* find and fix potential bugs
-* update to newer API. This means some old method for detecting mobile towers will be removed, and may break tower detection on some old devices.
-* detect 5G emitters and maybe more types
-
-
-Yet Another Location Backend
-============================
-This grew out of frustration with my earlier [mobile tower backend’s](https://github.com/n76/Local-GSM-Backend) two major faults:
-1. Need to periodically download a huge database. Only feasible when using WLAN/Wifi or fast unlimited mobile/cellular data.
-2. Despite repeated use of stumbling apps for the two projects that maintain tower data, the database never had good results for some very rural areas I frequently visit.
-
-I decided that I wanted a mobile/cellular backend that worked the same way as [my WLAN/WiFi backend](https://github.com/n76/wifi_backend). Initially I considered adding mobile/cellular support to the WLAN/WiFi backend.
-
-However, the WLAN/WiFi backend had grown over time and had developed complex settings that had to be repeatedly explained.
-
-Thus this new backend that has been written from scratch, admittedly with some copying and much inspiration from the two previous backends.
-
-It is structured so that adding additional RF emitter types like Bluetooth should be easy. However based on warnings about high resource use when scanning for Bluetooth and the high probability that a Bluetooth device will be mobile that has not been implemented.
+Potential future improvements:
+* Improve method for determining which emitters to discard in case of conflicting position report
+* Upgrade to more recent Android API. This means some old method for detecting mobile cells will be removed, and may break cell detection on some old devices.
+* Enable detecting 5G emitters and maybe other types (API upgrade necessary).
+* *Active mode* for automatically enabling GPS to determine position of newly found emitters.
+* Find and fix potential bugs
 
 Requirements on phone
 =====================
@@ -57,7 +30,7 @@ This is a plug-in for [µg UnifiedNlp](http://forum.xda-developers.com/android/a
 
 Setup on phone
 ==============
-In the NLP Controller app (interface for µg UnifiedNlp) select the "Déjà Vu Location Service". If using GmsCore, then the little gear at microG Settings->UnifiedNlp Settings->Configure location backends->Déjà Vu Location Service is used.
+In the NLP Controller app (interface for µg UnifiedNlp) select the "Local NLP Backend". If using GmsCore, then the little gear at microG Settings->UnifiedNlp Settings->Configure location backends->Local NLP Backend is used.
 
 When enabled, microG will request you grant location permissions to this backend. This is required so that the backend can monitor mobile/cell tower data and so that it can monitor the positions reported by the GPS.
 
@@ -71,23 +44,11 @@ What is stored in the database
 ------------------------------
 For each RF emitter detected an estimate of its coverage area (center and radius) and an estimate of how much it can be trusted is saved.
 
-For WLAN/WiFi APs the SSID is also saved for debug purposes. Analysis of the SSIDs detected by the phone can help identify name patterns used on mobile APs. The backend removes records from the database if the RF emitter seems to have moved, has disappeared or has a SSID that is associated with WLAN/WiFi APs that are often mobile (e.g. "Joes iPhone").
+For WLAN/WiFi APs the SSID is also saved for debug purposes. Analysis of the SSIDs detected by the phone can help identify name patterns used on mobile APs. The backend removes records from the database if the RF emitter has a SSID that is associated with WLAN/WiFi APs that are often mobile (e.g. "Joes iPhone").
 
 Clearing the database
 ---------------------
-This software does not have a clear or reset database function built it but you can use settings->Storage>Internal shared storage->Apps->Déjà Vu Location Service->Clear Data to remove the current database.
-
-Moved RF Emitter Handling
-=========================
-For position computations we wish to only use stationary RF emitters. For mobile/cellular towers this is not a huge problem. But with transit systems providing WiFi, car manufacturer's building WiFi hotspots into vehicles and the general use of WiFi tethering on mobile/cell phones, moving APs is an issue.
-
-This backend attempts to handle that in several ways.
-1. If the SSID of a WiFi AP matches a known pattern for an AP that is likely to be moving, the AP is “blacklisted”. Examples include SSIDs that have the name of a known transit company, SSIDs that contain "iphone" in the name, etc. You can examine the black list logic in the blacklistWifi() method of the [RfEmitter class](https://github.com/n76/DejaVu/blob/master/app/src/main/java/org/fitchfamily/android/dejavu/RfEmitter.java).
-2. A RF Emitter needs to be seen multiple times in locations that are reasonably close to one another before it is trusted.
-3. If the implied coverage area for a RF emitter is implausibly large, it is assumed that it has moved. Moved emitters will not be trusted again until they have a number of observations compatible with their new location.
-4. When a scan completes, the RF emitters are grouped by how close they are to one another. An emitter that is implausibly far from others ends up in its own group. We use the largest group of emitters to compute location.
-5. If we have a good location from the GPS we see if there are any RF emitters that we should have seen on our RF scan but did not. If we expected to see an emitter but didn’t, then we lower our level of trust in the emitter’s location.
-6. If our trust of an emitter’s location goes too low (i.e. we haven’t seen it in a long while in an area where we expect to see it), we remove the emitter from our database.
+This software does not have a clear or reset database function built it but you can use settings->Storage>Internal shared storage->Apps->Local NLP Backend->Clear Data to remove the current database.
 
 Permissions Required
 ====================
@@ -106,6 +67,8 @@ Credits
 =======
 The Kalman filter used in this backend is based on [work by @villoren](https://github.com/villoren/KalmanLocationManager.git).
 
+Most of this project is adjusted from [Déjà Vu](https://github.com/n76/DejaVu)
+
 License
 =======
 
@@ -113,13 +76,14 @@ Most of this project is licensed by GNU GPL. The Kalman filter code retains its 
 
 Icon
 ----
-The icon for this project is derived from two sources:
+The icon for this project is derived from:
 
-[A globe icon](https://commons.wikimedia.org/wiki/File:Blue_globe_icon.svg) and [a map pin icon](https://commons.wikimedia.org/wiki/File:Map_pin_icon.svg) both released under a [Creative Commons share alike license](https://creativecommons.org/licenses/by-sa/3.0/deed.en).
+[Geolocation icon](https://commons.wikimedia.org/wiki/File:Geolocation_-_The_Noun_Project.svg) released under [CC0 license](https://creativecommons.org/publicdomain/zero/1.0/deed.en).
 
 GNU General Public License
 --------------------------
 Copyright (C) 2017-18 Tod Fitch
+Copyright (C) 2022 Helium314
 
 This program is Free Software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
