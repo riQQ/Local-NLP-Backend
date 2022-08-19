@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Déjà Vu Location Service</string>
+    <string name="app_name">Local NLP Backend</string>
     <string name="summary">A microG/UnifiedNlp location provider backend using private on phone RF emitter database</string>
 
     <!-- settings -->
@@ -25,7 +25,7 @@ Often all 3 methods give (nearly) the same results, expect to see a difference o
     <string name="pref_cull_median">Median</string>
     <string name="pref_cull_none">Use all</string>
     <string name="pref_import_title">Import data</string>
-    <string name="pref_import_summary">Select CSV created from export, Déjà Vu database or MLS export</string>
+    <string name="pref_import_summary">Select CSV created from export, Déjà Vu / Local NLP Backend database or MLS export</string>
     <string name="import_error_format">Error: file format unknown</string>
     <string name="import_error_line">Error parsing line %s</string>
     <string name="import_error_database">Error importing database: %s</string>

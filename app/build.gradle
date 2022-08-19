@@ -4,7 +4,7 @@ apply plugin: 'kotlin-android'
 android {
     compileSdkVersion 28
     defaultConfig {
-        applicationId "org.fitchfamily.android.dejavu"
+        applicationId "helium314.localbackend"
         minSdkVersion 18
         // problem1: TelephonyManager.neighboringCellInfo is removed in API 29, but some old phones need it
         // problem2: support for 5G and 6 GHz WiFi is added in higher APIs
@@ -24,6 +24,7 @@ android {
     lintOptions {
         abortOnError false // otherwise targetSdk 28 won't compile
     }
+    namespace "org.fitchfamily.android.dejavu"
 }
 
 dependencies {
