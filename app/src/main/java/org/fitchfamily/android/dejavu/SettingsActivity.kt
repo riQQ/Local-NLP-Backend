@@ -19,18 +19,29 @@ package org.fitchfamily.android.dejavu
 *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.HandlerThread
+import android.os.Looper
 import android.preference.PreferenceActivity
 import android.preference.PreferenceManager
+import android.support.annotation.UiThread
 import android.util.Log
-import android.widget.Toast
+import android.widget.*
+import kotlinx.coroutines.*
 import java.io.File
 
 class SettingsActivity : PreferenceActivity() {
@@ -38,8 +49,6 @@ class SettingsActivity : PreferenceActivity() {
     // TODO 1: test everything more thoroughly
     //  export
     //  import from export, from mls, from db file
-    // TODO 2: need to exit / restart app after settings changed? check!
-    // TODO 3: add the last point (showing nearby emitters)
 
     private var settingsChanged = false
     private val prefs: SharedPreferences by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
@@ -62,6 +71,10 @@ class SettingsActivity : PreferenceActivity() {
             onClickExport()
             true
         }
+        findPreference(PREF_SHOW_EMITTERS)?.setOnPreferenceClickListener {
+            onClickScan()
+            true
+        }
     }
 
     override fun onResume() {
@@ -72,15 +85,19 @@ class SettingsActivity : PreferenceActivity() {
     override fun onPause() {
         super.onPause()
         prefs.unregisterOnSharedPreferenceChangeListener(listener)
-        if (settingsChanged)
-            BackendService.instance?.onClose()
+        if (settingsChanged) {
+            BackendService.instance?.apply {
+                onClose()
+                onOpen()
+            }
+        }
     }
 
     private fun onClickCull() {
         // todo: make a nicer radio button menu, with current selection being shown
         AlertDialog.Builder(this)
             .setTitle(R.string.pref_cull_title)
-            .setMessage(R.string.pref_cull_message) //todo: how to add line breaks?
+            .setMessage(R.string.pref_cull_message)
             .setPositiveButton(R.string.pref_cull_default) { _,_ -> prefs.edit().putInt(PREF_CULL, 0).apply() }
             .setNeutralButton(R.string.pref_cull_median) { _,_ -> prefs.edit().putInt(PREF_CULL, 1).apply() }
             .setNegativeButton(R.string.pref_cull_none) { _,_ -> prefs.edit().putInt(PREF_CULL, 2).apply() }
@@ -255,6 +272,91 @@ class SettingsActivity : PreferenceActivity() {
         db.close()
     }
 
+    private fun onClickScan() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+            && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+        )
+            return // should not happen, permissions are requested on start
+        // request location, because backendService may not be running
+        val lm = applicationContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val ll = object : LocationListener {
+            override fun onLocationChanged(loc: Location?) {}
+            override fun onStatusChanged(p0: String?, p1: Int, p2: Bundle?) {}
+            override fun onProviderEnabled(p0: String?) {}
+            override fun onProviderDisabled(p0: String?) {}
+        }
+        val t = HandlerThread("just need it so location can be requested")
+        t.start()
+        val l = t.looper
+        lm.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, ll, l)
+        try {
+            runBlocking { withTimeout(3500) {
+                while (BackendService.instance == null) { delay(100) }
+            } }
+            BackendService.instance!!.settingsActivity = this
+            Toast.makeText(this, R.string.show_scan_started, Toast.LENGTH_LONG).show()
+        } catch (e: CancellationException) {
+            Toast.makeText(this, R.string.show_scan_start_failed, Toast.LENGTH_LONG).show()
+        }
+        t.quit()
+    }
+
+    fun showEmitters(emitters: Collection<RfEmitter>) = runOnUiThread {
+        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        var d: AlertDialog? = null
+        val database = Database(this)
+        emitters.sortedBy { it.uniqueId }.forEach { emitter ->
+            val t = TextView(this).apply { text = emitter.uniqueId + (if (emitter.note.isNotBlank()) ", ${emitter.note}" else "") }
+            t.setOnClickListener {
+                val text = listOfNotNull(
+                    getString(R.string.show_scan_details_emitter_type, emitter.type),
+                    if (emitter.type == EmitterType.WLAN2 || emitter.type == EmitterType.WLAN5)
+                        getString(R.string.show_scan_details_emitter_ssid, emitter.note)
+                    else null,
+                    getString(R.string.show_scan_details_emitter_center, emitter.lat, emitter.lon),
+                    getString(R.string.show_scan_details_emitter_radius_ew, emitter.radiusEW),
+                    getString(R.string.show_scan_details_emitter_radius_ns, emitter.radiusNS),
+                    if (emitter.status == EmitterStatus.STATUS_BLACKLISTED) getString(R.string.show_scan_details_emitter_blacklisted) else null,
+                ).joinToString("\n")
+                AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.show_scan_details_emitter, emitter.uniqueId))
+                    .setMessage(text)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+            }
+            val b = Button(this).apply { setBackgroundResource(android.R.drawable.ic_delete) }
+            b.isEnabled = database.getEmitter(emitter.rfIdentification) != null
+            b.setOnClickListener {
+                AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.show_scan_emitter_delete, emitter.uniqueId))
+                    .setPositiveButton(R.string.show_scan_emitter_delete_confirm) { _, _ ->
+                        val db = Database(this)
+                        db.beginTransaction()
+                        db.drop(emitter)
+                        db.endTransaction()
+                        db.close()
+                        d?.dismiss()
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
+            val l = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                addView(b)
+                addView(t)
+            }
+            layout.addView(l)
+        }
+        database.close()
+        layout.setPadding(30,10,30,10)
+        d = AlertDialog.Builder(this)
+            .setTitle(R.string.show_scan_results)
+            .setView(ScrollView(this).apply { addView(layout) })
+            .setPositiveButton(android.R.string.ok, null)
+            .create()
+        d?.show()
+    }
+
     private fun onClickClear() {
         // todo: confirmation dialog
         //  and close backend service
@@ -275,6 +377,7 @@ const val PREF_BUILD = "build"
 const val PREF_CULL = "pref_cull"
 const val PREF_IMPORT = "pref_import"
 const val PREF_EXPORT = "pref_export"
+const val PREF_SHOW_EMITTERS = "pref_show_emitters"
 
 private const val MLS = "radio,mcc,net,area,cell,unit,lon,lat,range,samples,changeable,created,updated,averageSignal"
 private const val TAG = "DejaVu Settings"

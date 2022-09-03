@@ -16,9 +16,9 @@
     <string name="pref_show_emitters_summary">Scans for emitters and displays result with additional information</string>
     <string name="pref_cull_title">Discard bad emitters</string>
     <string name="pref_cull_summary">Decide which emitters should be discarded in case of inconsistent locations</string>
-    <string name="pref_cull_message">Default (used in Déjà Vu): only use the largest consistent group of emitters. This usually gives good accuracy, but occasionally produces wrong locations.\n
-Median: discard emitters that are unbelievably far from the median location: somewhat worse accuracy than default, but reduced chance of wrong locations.\n
-Use all emitters: sensitive to extreme outliers and often the least accurate of the three, but most likely to contain the actual location inside the accuracy circle.\n
+    <string name="pref_cull_message">Default (used in Déjà Vu): only use the largest consistent group of emitters. This usually gives good accuracy, but occasionally produces wrong locations.\n\n
+Median: discard emitters that are unbelievably far from the median location: somewhat worse accuracy than default, but reduced chance of wrong locations.\n\n
+Use all emitters: sensitive to extreme outliers and often the least accurate of the three, but most likely to contain the actual location inside the accuracy circle.\n\n
 Often all 3 methods give (nearly) the same results, expect to see a difference only in some cases.
     </string>
     <string name="pref_cull_default">Default</string>
@@ -33,5 +33,17 @@ Often all 3 methods give (nearly) the same results, expect to see a difference o
     <string name="import_replace">Replace local emitters</string>
     <string name="import_keep">Keep local emitters unchanged</string>
     <string name="import_merge">Merge emitters</string>
+    <string name="show_scan_started">Scanning…</string>
+    <string name="show_scan_start_failed">Scanning failed, maybe the backend service is disabled</string>
+    <string name="show_scan_results">Nearby emitters</string>
+    <string name="show_scan_details_emitter">Details for emitter %s</string>
+    <string name="show_scan_details_emitter_type">Emitter type: %s</string>
+    <string name="show_scan_details_emitter_ssid">WiFi SSID: %s</string>
+    <string name="show_scan_details_emitter_center">Center: latitude %1$.5f, longitude %2$.5f</string>
+    <string name="show_scan_details_emitter_radius_ew">Width east-west: %.2f m</string>
+    <string name="show_scan_details_emitter_radius_ns">Width north-south: %.2f m</string>
+    <string name="show_scan_details_emitter_blacklisted">This emitter is blacklisted</string>
+    <string name="show_scan_emitter_delete">Delete emitter %s?</string>
+    <string name="show_scan_emitter_delete_confirm">Delete</string>
 
 </resources>

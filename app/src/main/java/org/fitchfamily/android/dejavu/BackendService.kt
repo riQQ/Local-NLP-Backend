@@ -101,10 +101,12 @@ class BackendService : LocationBackendService() {
     private var mobileScanEnabled = true
     private var cull = 0
 
+    var settingsActivity: SettingsActivity? = null // crappy way for forwarding scan results
+
     /**
      * We are starting to run, get the resources we need to do our job.
      */
-    override fun onOpen() {
+    public override fun onOpen() {
         Log.d(TAG, "onOpen() entry.")
         super.onOpen()
         instance = this
@@ -114,7 +116,7 @@ class BackendService : LocationBackendService() {
         wifiScanInProgress = false
         if (emitterCache == null) emitterCache = Cache(this)
         permissionsOkay = true
-        prefs = PreferenceManager.getDefaultSharedPreferences(applicationContext)
+        prefs = PreferenceManager.getDefaultSharedPreferences(this)
         if (prefs.getString(PREF_BUILD, "") != Build.FINGERPRINT) {
             // remove usual ASU values if build changed
             // because results might be different in a different build
@@ -202,7 +204,7 @@ class BackendService : LocationBackendService() {
      *
      * @return Always null.
      */
-    override fun update(): Location? {
+    public override fun update(): Location? {
         //Log.d(TAG, "update() entry.");
         if (permissionsOkay) {
             if (DEBUG) Log.d(TAG, "update() - NLP asking for location")
@@ -692,6 +694,11 @@ class BackendService : LocationBackendService() {
         if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - end of current period.")
         oldKalmanUpdate = kalmanGpsLocation?.timeOfUpdate ?: 0L
         lastGpsOfThisPeriod = null
+        if (settingsActivity != null) {
+            // only needed for reporting once, so we set it to null immediately
+            settingsActivity?.showEmitters(seenSet.map { emitterCache!![it] })
+            settingsActivity = null
+        }
 
         val locations: Collection<RfLocation>
         synchronized(seenSet) {

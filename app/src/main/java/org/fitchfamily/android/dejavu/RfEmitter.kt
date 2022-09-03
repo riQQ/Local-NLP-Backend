@@ -76,7 +76,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
             field = value
             note = value?.note ?: ""
         }
-    private var status: EmitterStatus = EmitterStatus.STATUS_UNKNOWN
+    var status: EmitterStatus = EmitterStatus.STATUS_UNKNOWN
+        private set
 
     val uniqueId: String get() = rfIdentification.uniqueId
     val rfIdentification: RfIdentification = RfIdentification(id, type)
