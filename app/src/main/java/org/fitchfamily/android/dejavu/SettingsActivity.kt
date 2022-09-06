@@ -423,4 +423,4 @@ const val PREF_EXPORT = "pref_export"
 const val PREF_SHOW_EMITTERS = "pref_show_emitters"
 
 private const val MLS = "radio,mcc,net,area,cell,unit,lon,lat,range,samples,changeable,created,updated,averageSignal"
-private const val TAG = "DejaVu Settings"
+private const val TAG = "LocalNLP Settings"

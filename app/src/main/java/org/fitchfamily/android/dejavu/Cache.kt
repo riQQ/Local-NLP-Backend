@@ -177,7 +177,7 @@ internal class Cache(context: Context?) {
         private const val MAX_WORKING_SET_SIZE = 500
         private const val MAX_AGE = 30
         private val DEBUG = BuildConfig.DEBUG
-        private const val TAG = "DejaVu Cache"
+        private const val TAG = "LocalNLP Cache"
     }
 
 }

@@ -529,7 +529,7 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
     }
 
     companion object {
-        private const val TAG = "DejaVu DB"
+        private const val TAG = "LocalNLP DB"
         private val DEBUG = BuildConfig.DEBUG
         private const val VERSION = 4
         const val NAME = "rf.db"

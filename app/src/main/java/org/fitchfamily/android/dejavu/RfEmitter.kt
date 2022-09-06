@@ -69,7 +69,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 return
             field = value
             if (isBlacklisted())
-                changeStatus(EmitterStatus.STATUS_BLACKLISTED, "emitter blacklisted")
+                changeStatus(EmitterStatus.STATUS_BLACKLISTED, "$logString: emitter blacklisted")
         }
     var lastObservation: Observation? = null // null if we haven't seen this emitter
         set(value) {
@@ -303,7 +303,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
         // split lc into continuous occurrences of a-z
         // most 'contains' checks only make sense if the string is a separate word
         // this accelerates comparison a lot, at the risk of missing some wifis
-        val lcSplit = lc.split(splitRegex).toSet()
+        val lcSplit = lc.split(splitRegex).toHashSet()
 
         // Seen a large number of WiFi networks where the SSID is the last
         // three octets of the MAC address. Often in rural areas where the
@@ -370,7 +370,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
 
 private val DEBUG = BuildConfig.DEBUG
 
-private const val TAG = "DejaVu RfEmitter"
+private const val TAG = "LocalNLP RfEmitter"
 
 private val splitRegex = "[^a-z]".toRegex() // for splitting SSID into "words"
 // use hashSets for fast blacklist*.contains() check

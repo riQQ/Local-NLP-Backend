@@ -57,11 +57,11 @@ class BackendService : LocationBackendService() {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || intent.extras?.getBoolean(WifiManager.EXTRA_RESULTS_UPDATED) != false)
                 wifiJob = scope.launch {
                     onWiFisChanged()
-                    if (DEBUG) Log.d(TAG, "onReceive: gathered WiFi scan results to be queued for processing.")
+                    if (DEBUG) Log.d(TAG, "onReceive() - gathered WiFi scan results to be queued for processing.")
                     wifiScanInProgress = false // definitely set after observations are queued for processing
                 }
             else {
-                if (DEBUG) Log.d(TAG, "onReceive: received WiFi scan result intent, but scan not successful")
+                if (DEBUG) Log.d(TAG, "onReceive() - received WiFi scan result intent, but scan not successful")
                 // allow scanning for wifi again soon, but not immediately (sometimes unifiedNLP calls update() too frequently)
                 wifiScanInProgress = false
             }
@@ -330,7 +330,7 @@ class BackendService : LocationBackendService() {
         if (currentProcessTime < nextMobileScanTime || mobileJob.isActive) {
             if (DEBUG) Log.d(TAG, "startMobileScan() - need to wait before starting next scan")
             if (currentProcessTime > nextWlanScanTime + 60000) {
-                Log.w(TAG, "startMobileScan() - previous mobile scan still not done, committing suicide to stop it")
+                Log.w(TAG, "startMobileScan() - previous mobile scan still not done, killing aüü to stop it")
                 // todo: if this works, it should also be done/checked onClose()
                 exitProcess(0)
             }
@@ -655,18 +655,18 @@ class BackendService : LocationBackendService() {
      */
     private fun startProcessingPeriodIfNecessary() {
         if (periodicProcessing.isActive) return
-        if (DEBUG) Log.d(TAG, "startProcessingPeriodIfNecessary: starting new processing period")
+        if (DEBUG) Log.d(TAG, "startProcessingPeriodIfNecessary() - starting new processing period")
         periodicProcessing = scope.launch(Dispatchers.IO) { // IO because it's mostly waiting
             delay(REPORTING_INTERVAL)
-            if (DEBUG) Log.d(TAG, "startProcessingPeriodIfNecessary: reporting interval over, continue")
+            if (DEBUG) Log.d(TAG, "startProcessingPeriodIfNecessary() - reporting interval over, continue")
             // delay a bit more if wifi scan is still running
             if (wifiScanInProgress) {
-                if (DEBUG) Log.d(TAG, "startProcessingPeriodIfNecessary: Delaying endOfPeriodProcessing because WiFi scan in progress")
+                if (DEBUG) Log.d(TAG, "startProcessingPeriodIfNecessary() - Delaying endOfPeriodProcessing because WiFi scan in progress")
                 val waitUntil = nextWlanScanTime + 1000 // delay at max until 1 sec after wifi scan should be finished
                 while (SystemClock.elapsedRealtime() < waitUntil) {
                     delay(50)
                     if (!wifiScanInProgress) {
-                        if (DEBUG) Log.d(TAG, "startProcessingPeriodIfNecessary: wifi scan done, stop waiting")
+                        if (DEBUG) Log.d(TAG, "startProcessingPeriodIfNecessary() - wifi scan done, stop waiting")
                         break
                     }
                 }
@@ -744,12 +744,12 @@ class BackendService : LocationBackendService() {
                 val newThing = locations.medianCullSafe()
                 Log.v(TAG, "avg (${weightedAverageLocation.accuracy}) minus medianCullSafe loc (${newThing?.accuracy}): lat ${(weightedAverageLocation.latitude - (newThing?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (newThing?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
             }
-            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing(): reporting location")
+            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - reporting location")
             // for some weird reason, reporting may (very rarely) take REALLY long, even minutes
             // this may be an issue of unifiedNLP instead of dejavu... anyway, do it in background!
             scope.launch(Dispatchers.IO) { report(weightedAverageLocation) }
         } else
-            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing(): no location to report")
+            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - no location to report")
     }
 
     /**
@@ -760,7 +760,7 @@ class BackendService : LocationBackendService() {
      */
     private fun updateEmitters(emitters: Collection<RfEmitter>, gps: Location?) {
         if (gps == null) return
-        Log.i(TAG, "updating emitters with accuracy ${gps.accuracy}")
+        if (DEBUG) Log.d(TAG, "updateEmitters() - updating with accuracy ${gps.accuracy}")
         for (emitter in emitters) {
             emitter.updateLocation(gps)
         }
@@ -860,7 +860,7 @@ private const val GPS_COORDINATE_NOISE = 2.0 // reduced from initial 3.0 to get 
 
 private val DEBUG = BuildConfig.DEBUG
 
-private const val TAG = "DejaVu Backend"
+private const val TAG = "LocalNLP Backend"
 private val myPerms = arrayOf(
     permission.ACCESS_WIFI_STATE, permission.CHANGE_WIFI_STATE,
     permission.ACCESS_COARSE_LOCATION, permission.ACCESS_FINE_LOCATION

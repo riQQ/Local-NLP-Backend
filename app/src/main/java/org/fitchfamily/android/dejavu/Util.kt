@@ -27,7 +27,7 @@ import android.util.Log
 import kotlin.math.*
 
 private val DEBUG = BuildConfig.DEBUG
-private const val TAG = "DejaVu Util"
+private const val TAG = "LocalNLP Util"
 
 // DEG_TO_METER is only approximate, but an error of 1% is acceptable
 //  for latitude it depends on latitude, from ~110500 (equator) ~111700 (poles)
@@ -46,7 +46,7 @@ const val MINIMUM_ASU = 1
 
 // KPH -> Meters/millisec (KPH * 1000) / (60*60*1000) -> KPH/3600
 //        const val EXPECTED_SPEED = 120.0f / 3600 // 120KPH (74 MPH)
-const val LOCATION_PROVIDER = "DejaVu"
+const val LOCATION_PROVIDER = "LocalNLP"
 private const val MINIMUM_BELIEVABLE_ACCURACY = 15.0F
 
 // much faster than location.distanceTo(otherLocation)
@@ -351,14 +351,14 @@ fun Collection<RfLocation>.medianCullSafe(): Location? {
         if (l == noCullLoc && noCullLoc.accuracy > 2.0 * medianCullLoc.accuracy
             && approximateDistance(noCullLoc.latitude, noCullLoc.longitude, medianCullLoc.latitude, medianCullLoc.longitude) < noCullLoc.accuracy
         ) {
-            if (DEBUG) Log.d(TAG, "medianCullSafe: using medianCull because chosen noCull is close but much less accurate")
+            if (DEBUG) Log.d(TAG, "medianCullSafe() - using medianCull because chosen noCull is close but much less accurate")
             return medianCullLoc
         }
         if (DEBUG) {
             if (l == medianCullLoc)
-                Log.d(TAG, "medianCullSafe: checked medianCull, still using")
+                Log.d(TAG, "medianCullSafe() - checked medianCull, still using")
             else
-                Log.d(TAG, "medianCullSafe: not using medianCull")
+                Log.d(TAG, "medianCullSafe() - not using medianCull")
         }
         return l
     }

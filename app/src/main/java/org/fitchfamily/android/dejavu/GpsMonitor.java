@@ -43,7 +43,7 @@ import android.util.Log;
  * use to map the coverage of the RF emitters we detect.
  */
 public class GpsMonitor extends Service implements LocationListener {
-    private static final String TAG = "DejaVu GpsMonitor";
+    private static final String TAG = "LocalNLP GpsMonitor";
 
     private static final int GPS_SAMPLE_TIME = 0;
     private static final float GPS_SAMPLE_DISTANCE = 0;
