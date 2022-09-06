@@ -25,7 +25,7 @@ Often all 3 methods give (nearly) the same results, expect to see a difference o
     <string name="pref_cull_median">Median</string>
     <string name="pref_cull_none">Use all</string>
     <string name="pref_import_title">Import data</string>
-    <string name="pref_import_summary">Select CSV created from export, Déjà Vu / Local NLP Backend database or MLS export</string>
+    <string name="pref_import_summary">Select CSV created from export, Déjà Vu / Local NLP Backend database or MLS cell export</string>
     <string name="import_error_format">Error: file format unknown</string>
     <string name="import_error_line">Error parsing line %s</string>
     <string name="import_error_database">Error importing database: %s</string>
@@ -33,6 +33,9 @@ Often all 3 methods give (nearly) the same results, expect to see a difference o
     <string name="import_replace">Replace local emitters</string>
     <string name="import_keep">Keep local emitters unchanged</string>
     <string name="import_merge">Merge emitters</string>
+    <string name="import_mls_use_type">Use %s</string>
+    <string name="import_mls_title">Import from MLS file</string>
+    <string name="import_mls_country_code_message">Enter country codes to import, comma separated. Leave blank to import all.</string>
     <string name="show_scan_started">Scanning…</string>
     <string name="show_scan_start_failed">Scanning failed, maybe the backend service is disabled</string>
     <string name="show_scan_results">Nearby emitters</string>

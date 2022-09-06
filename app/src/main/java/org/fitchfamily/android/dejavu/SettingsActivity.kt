@@ -43,9 +43,12 @@ import java.io.File
 
 class SettingsActivity : PreferenceActivity() {
 
-    // TODO 1: test everything more thoroughly
-    //  export
-    //  import from export, from mls, from db file
+    // TODO: needs more testing
+    //  export: ?
+    //  import:
+    //   from export
+    //   from mls: works, filters too
+    //   from db file
 
     private var settingsChanged = false
     private val prefs: SharedPreferences by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
@@ -131,47 +134,70 @@ class SettingsActivity : PreferenceActivity() {
         val uri = data.data ?: return
         when (requestCode) {
             IMPORT_CODE -> importFile(uri)
-            EXPORT_CODE -> exportToFile(uri) // todo: this may take LONG -> do it in background, and give some feedback that it started / finished
+            EXPORT_CODE -> exportToFile(uri)
         }
     }
 
     private fun importFile(uri: Uri) {
-        val f = File(this.applicationInfo.dataDir + File.separator + "temp_import_file")
         val inputStream = contentResolver?.openInputStream(uri) ?: return
-        f.outputStream().use {
-            inputStream.copyTo(it)
-        }
-        inputStream.close()
-        // so now we have the data in "f"
+        val reader = inputStream.bufferedReader()
         // if text, determine format and insert
         // if db, copy content
 
         // but first open a dialog
         // what to do on collisions (keep local, overwrite, merge)
         // TODO:
-        //  for mls import allow filtering by type and country code
-        //  and make the import faster, it's horribly slow (10 min for 300k emitters)
+        //  make the import faster, it's horribly slow (10 min for 300k emitters)
+        //   and show progress bar instead of blocking ui
         //   don't create intermediate emitters? would avoid unnecessary checks for size and blacklist
-        //  and show some sort of progress bar
+        //   but first check which parts are slow
         val collisionReplace = SQLiteDatabase.CONFLICT_REPLACE
         val collisionKeep = SQLiteDatabase.CONFLICT_IGNORE
         val collisionMerge = 0
 
+        fun readFromFile(collision: Int, readFormat: Int, mlsIgnoreTypes: Set<String>, mlsCountryCodes: Set<String>) {
+            val db = Database(this)
+            reader.useLines {
+                val iter = it.iterator()
+                var line: String
+                while (iter.hasNext()) {
+                    line = iter.next()
+                    try {
+                        val splitLine = parseLine(line, readFormat, mlsIgnoreTypes, mlsCountryCodes) ?: continue
+                        db.putLine(
+                            collision,
+                            splitLine[0],
+                            splitLine[1],
+                            splitLine[2].toDouble(),
+                            splitLine[3].toDouble(),
+                            splitLine[4].toDouble(),
+                            splitLine[5].toDouble(),
+                            splitLine[6]
+                        )
+                    } catch (e: Exception) {
+                        Toast.makeText(this, getString(R.string.import_error_line, line), Toast.LENGTH_LONG).show()
+                        Log.i(TAG, "import from file: error parsing line $line", e)
+                        break
+                    }
+                }
+            }
+
+            db.close()
+            inputStream.close()
+        }
+
         fun import(collision: Int) {
             BackendService.instance?.onClose()
-            val db = Database(this)
-//            db.writableDatabase.beginTransaction()
             if (uri.toString().endsWith(".db")) {
+                val db = Database(this)
                 val dbFile = File(this.applicationInfo.dataDir + File.separator + "databases" + File.separator + "tmp.db")
                 dbFile.delete()
                 dbFile.parentFile.mkdirs()
-                f.copyTo(dbFile)
+                dbFile.outputStream().use { inputStream.copyTo(it) }
                 try {
                     val otherDb = Database(this, "tmp.db")
                     // read each entry and copy it to db, respecting collision
                     otherDb.writableDatabase.beginTransaction()
-//                    val count: Int
-//                    otherDb.writableDatabase.rawQuery("SELECT COUNT(*) FROM ${Database.TABLE_SAMPLES}", null).use { count = it.getInt(0) }
                     otherDb.getAll().forEach {
                         db.putLine(collision, it.uniqueId, it.type.toString(), it.lat, it.lon, it.radiusNS, it.radiusEW, it.note)
                     }
@@ -181,46 +207,62 @@ class SettingsActivity : PreferenceActivity() {
                     Toast.makeText(this, getString(R.string.import_error_database, e.message), Toast.LENGTH_LONG).show()
                 }
                 dbFile.delete()
-            } else {
-                f.useLines {
-                    val iter = it.iterator()
-                    var line = iter.next()
-                    val readFormat = when {
-                        line == MLS -> 0
-                        line.substringAfter("database v").toIntOrNull() == 4 -> {
-                            iter.next() // skip the header line, as it's not used
-                            4
-                        }
-                        else -> {
-                            Toast.makeText(this, R.string.import_error_format, Toast.LENGTH_LONG).show()
-                            return
-                        }
-                    }
-                    while (iter.hasNext()) {
-                        line = iter.next()
-                        try {
-                            val splitLine = parseLine(line, readFormat)
-                            db.putLine(
-                                collision,
-                                splitLine[0],
-                                splitLine[1],
-                                splitLine[2].toDouble(),
-                                splitLine[3].toDouble(),
-                                splitLine[4].toDouble(),
-                                splitLine[5].toDouble(),
-                                splitLine[6]
-                            )
-                        } catch (e: Exception) {
-                            Toast.makeText(this, getString(R.string.import_error_line, line), Toast.LENGTH_LONG).show()
-                            Log.i(TAG, "import from file: error parsing line $line", e)
-                            return
-                        }
-                    }
+                db.close()
+                return
+            }
+            val firstLine = reader.readLine()
+            val readFormat = when {
+                firstLine == MLS -> 0
+                firstLine.substringAfter("database v").toIntOrNull() == 4 -> {
+                    reader.readLine() // skip the header line, as it's not used
+                    4
+                }
+                else -> {
+                    Toast.makeText(this, R.string.import_error_format, Toast.LENGTH_LONG).show()
+                    return
                 }
             }
-//            db.writableDatabase.endTransaction()
-            db.close()
-            f.delete()
+
+            val mlsIgnoreTypes = mutableSetOf<String>()
+            val mlsCountryCodes = mutableSetOf<String>()
+            if (readFormat == 0) {
+                val gsmBox = CheckBox(this).apply {
+                    text = resources.getString(R.string.import_mls_use_type, "GSM")
+                    isChecked = true
+                }
+                val umtsBox = CheckBox(this).apply {
+                    text = resources.getString(R.string.import_mls_use_type, "UMTS")
+                    isChecked = true
+                }
+                val lteBox = CheckBox(this).apply {
+                    text = resources.getString(R.string.import_mls_use_type, "LTE")
+                    isChecked = true
+                }
+                val countryCodesText = TextView(this).apply { setText(R.string.import_mls_country_code_message) }
+                val countryCodes = EditText(this)
+                val layout = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(gsmBox)
+                    addView(umtsBox)
+                    addView(lteBox)
+                    addView(countryCodesText)
+                    addView(countryCodes)
+                    setPadding(30, 10, 30, 10)
+                }
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.import_mls_title)
+                    .setView(layout)
+                    .setPositiveButton(android.R.string.ok) { _, _ ->
+                        if (!gsmBox.isChecked) mlsIgnoreTypes.add("GSM")
+                        if (!umtsBox.isChecked) mlsIgnoreTypes.add("UMTS")
+                        if (!lteBox.isChecked) mlsIgnoreTypes.add("LTE")
+                        mlsCountryCodes.addAll(
+                            countryCodes.text.toString().split(',').map { it.trim() })
+                        readFromFile(collision, readFormat, mlsIgnoreTypes, mlsCountryCodes)
+                    }
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show()
+            }
         }
 
         AlertDialog.Builder(this)
@@ -229,21 +271,24 @@ class SettingsActivity : PreferenceActivity() {
             .setPositiveButton(R.string.import_replace) { _,_ -> import(collisionReplace) }
             .setNeutralButton(R.string.import_merge) { _,_ -> import(collisionMerge) }
             .setNegativeButton(R.string.import_keep) { _,_ -> import(collisionKeep) }
-            .setOnCancelListener { f.delete() }
+            .setOnCancelListener { inputStream.close() }
             .show()
     }
 
     /** converts the line to the 7 required entries for putting in DB */
-    private fun parseLine(line: String, readFormat: Int): List<String> {
+    private fun parseLine(line: String, readFormat: Int, mlsIgnoreTypes: Set<String>, mlsCountryCodes: Set<String>): List<String>? {
         var splitLine = line.split(',')
         if (readFormat == 0) { // MLS cell export
+            if (splitLine.first() in mlsIgnoreTypes || splitLine[1] !in mlsCountryCodes) return null
             val rfid = when (splitLine.first()) {
-                // todo: doing it like this, too often nothing is found... -> check how mozilla backend does it
-                //  also the last number for LTE is often nothing/empty in MLS, but must be integer
-                //   simply using 0 will not work, never found this in my db... but maybe some phones don't report it?
+                // todo: check whether this is really definitely correct!
+                //  maybe compare with MLS backend or stumbler
                 "GSM" -> "GSM/${splitLine[1]}/${splitLine[2]}/${splitLine[3]}/${splitLine[4]}" // GSM,202,0,42,26363
                 "UMTS" -> "WCDMA/${splitLine[1]}/${splitLine[2]}/${splitLine[3]}/${splitLine[4]}" // UMTS,202,0,6060,4655229
-                "LTE" -> "LTE/${splitLine[1]}/${splitLine[2]}/${splitLine[4]}/${splitLine[6]}/${splitLine[5]}" //LTE,202,1,3126,35714457,20
+                "LTE" -> {
+                    if (splitLine[5].isEmpty()) return null // why is this the case so often?
+                    "LTE/${splitLine[1]}/${splitLine[2]}/${splitLine[3]}/${splitLine[5]}/${splitLine[4]}" //LTE,202,1,3126,35714457,20
+                }
                 else -> ""
             }
             splitLine = listOf(rfid, rfid.substringBefore('/'), splitLine[7], splitLine[6], splitLine[8], splitLine[8], "")
@@ -256,6 +301,7 @@ class SettingsActivity : PreferenceActivity() {
     }
 
     private fun exportToFile(uri: Uri) {
+        // todo: show progress bar instead of blocking ui?
         val os = contentResolver?.openOutputStream(uri)?.bufferedWriter() ?: return
         BackendService.instance?.onClose()
         val db = Database(this)
