@@ -349,6 +349,7 @@ class SettingsActivity : PreferenceActivity() {
         var d: AlertDialog? = null
         val database = Database(this)
         emitters.sortedBy { it.uniqueId }.forEach { emitter ->
+            val emitterInDb = database.getEmitter(emitter.rfIdentification) != null
             val t = TextView(this).apply { text = emitter.uniqueId + (if (emitter.note.isNotBlank()) ", ${emitter.note}" else "") }
             t.setOnClickListener {
                 val text = listOfNotNull(
@@ -360,6 +361,7 @@ class SettingsActivity : PreferenceActivity() {
                     getString(R.string.show_scan_details_emitter_radius_ew, emitter.radiusEW),
                     getString(R.string.show_scan_details_emitter_radius_ns, emitter.radiusNS),
                     if (emitter.status == EmitterStatus.STATUS_BLACKLISTED) getString(R.string.show_scan_details_emitter_blacklisted) else null,
+                    if (!emitterInDb) getString(R.string.show_scan_details_emitter_not_in_db) else null,
                 ).joinToString("\n")
                 AlertDialog.Builder(this)
                     .setTitle(getString(R.string.show_scan_details_emitter, emitter.uniqueId))
@@ -367,8 +369,10 @@ class SettingsActivity : PreferenceActivity() {
                     .setPositiveButton(android.R.string.ok, null)
                     .show()
             }
-            val b = Button(this).apply { setBackgroundResource(android.R.drawable.ic_delete) }
-            b.isEnabled = database.getEmitter(emitter.rfIdentification) != null
+            val b = Button(this).apply {
+                if (emitterInDb) setBackgroundResource(android.R.drawable.ic_delete)
+                isEnabled = emitterInDb
+            }
             b.setOnClickListener {
                 AlertDialog.Builder(this)
                     .setTitle(getString(R.string.show_scan_emitter_delete, emitter.uniqueId))
