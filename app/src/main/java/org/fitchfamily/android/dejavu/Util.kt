@@ -24,10 +24,7 @@ import android.location.Location
 import android.net.wifi.ScanResult
 import android.os.Bundle
 import android.util.Log
-import kotlin.math.abs
-import kotlin.math.cos
-import kotlin.math.max
-import kotlin.math.sqrt
+import kotlin.math.*
 
 private val DEBUG = BuildConfig.DEBUG
 private const val TAG = "DejaVu Util"
@@ -129,14 +126,6 @@ fun culledEmitters(locations: Collection<RfLocation>): Set<RfLocation>? {
         if (DEBUG) Log.d(TAG, "culledEmitters() - only got ${result.size}, but " +
                 "${result.minOfOrNull { it.type.getRfCharacteristics().minCount }} are required")
     }
-    // fallback: try second group. this triggers very rarely todo: check logs, so far the 2nd group never helped (2 cases)
-    if (groups.size > 1) {
-        groups.sortedBy { it.size }[1].let { result ->
-            if (DEBUG) Log.d(TAG, "culledEmitters() - trying second group")
-            if (result.any { it.type.getRfCharacteristics().minCount < result.size })
-                return result
-        }
-    }
     return null
 }
 
@@ -209,14 +198,19 @@ fun Collection<RfLocation>.weightedAverage(): Location {
         // The actual accuracy we want to use for this location is an adjusted accuracyEstimate.
         // If asu is good, we're likely close to the emitter, so we can decrease accuracy value.
         // asuAdjustedAccuracy varies between minRange and accuracyEstimate
-        val asuAdjustedAccuracy = minRange + (1.0 - ((asu - MINIMUM_ASU) * 1.0 / MAXIMUM_ASU)) * (it.accuracyEstimate - minRange)
+        val factor = 1.0 - ((asu - MINIMUM_ASU) * 1.0 / MAXIMUM_ASU)
+        val asuAdjustedAccuracy = minRange + factor * factor * (it.accuracyEstimate - minRange)
 
         // <Comment on the factor 0.5 from original WeightedAverage.java>
         // Our input has an accuracy based on the detection of the edge of the coverage area.
         // So assume that is a high (two sigma) probability and, worse, assume we can turn that
         // into normal distribution error statistic. We will assume our standard deviation (one
         // sigma) is half of our accuracy.
-        accuracies[i] = asuAdjustedAccuracy * METER_TO_DEG * 0.5
+        //accuracies[i] = asuAdjustedAccuracy * METER_TO_DEG * 0.5
+        // But we use the factor 0.7 instead, because 0.5 sometimes gives overly accurate results.
+        // This makes accuracy worse if asu is low, and if range is close to minRange. The former
+        // is desired, and the latter is a side effect that usually isn't that bad
+        accuracies[i] = asuAdjustedAccuracy * METER_TO_DEG * 0.7
     }
     // set weighted means
     val latMean = weightedMean(latitudes, weights)
@@ -231,7 +225,7 @@ fun Collection<RfLocation>.weightedAverage(): Location {
     // similar if all WiFis are suspicious... don't trust it
     val allWifisSuspicious = hasWifi && none { !it.suspicious && it.type in shortRangeEmitterTypes }
     val reportAcc = acc * if (allWifisSuspicious || (size == 1 && first().radius < single().type.getRfCharacteristics().minimumRange))
-        2.0 else 1.0
+        1.5 else 1.0 // factor 1.5 to approximately undo the factor 0.7 above
     return location(latMean, lonMean, reportAcc.toFloat())
 }
 
@@ -288,15 +282,13 @@ private fun weightedVariance(weightedMeanPosition: Double, positions: DoubleArra
 }
 
 // weighted average with removing outliers (more than 2 accuracies away from median center)
-// no, then an outlier may still destroy the center
-// need median center!
 // and use only short range emitters if any are available
 fun Collection<RfLocation>.medianCull(): Collection<RfLocation>? {
     if (isEmpty()) return null
     // use trustworthy wifi results for median location, but only if at least 3 emitters
     // if we have less than 3 results, also use suspicious results
     // if we still have less than 3 results, use all
-    // 3 results because with less there is a too high chance of bad results
+    // 3 results because with less there is a too high chance of bad median locations (see below)
     val emittersForMedian = filter { it.type in shortRangeEmitterTypes && !it.suspicious }
         .let { goodList ->
             if (goodList.size >= 3) goodList
@@ -306,12 +298,13 @@ fun Collection<RfLocation>.medianCull(): Collection<RfLocation>? {
                     else this
                 }
         }
-    // take median of lat and lon separately
-    // this can lead to unexpected and bad results, which should be caught in newThing
+    // Take median of lat and lon separately because it simple. This can lead to unexpected and
+    // bad results if emitters are very far apart. Ideally such cases should be caught in medianCullSafe.
     val latMedian = emittersForMedian.map { it.lat }.median()
     val lonMedian = emittersForMedian.map { it.lon }.median()
-    // use locations that are close enough to the median location (2 * their accuracy)
-    // todo: maybe reduce factor 2 to 1.5 or sth like this? but we really just want to remove outliers
+    // Use locations that are close enough to the median location (2 * their accuracy).
+    // Maybe the factor 2 could be reduced to 1.5 or sth like this... but we really just want to
+    // remove outliers, so it shouldn't matter too much.
     val closeToMedian = filter { approximateDistance(latMedian, lonMedian, it.lat, it.lon) < 2.0 * it.accuracyEstimate }
     if (DEBUG) Log.d(TAG, "medianCull() - using ${closeToMedian.size} of initially $size locations")
     return closeToMedian.ifEmpty { culledEmitters(this) } // fallback to original culledEmitters

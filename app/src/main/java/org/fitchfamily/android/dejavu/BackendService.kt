@@ -742,7 +742,7 @@ class BackendService : LocationBackendService() {
                 val medianCull = medianCullEmitters?.weightedAverage()
                 Log.v(TAG, "avg (${weightedAverageLocation.accuracy}) minus medianCull loc (${medianCull?.accuracy}) / ${medianCullEmitters?.size}: lat ${(weightedAverageLocation.latitude - (medianCull?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (medianCull?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
                 val newThing = locations.medianCullSafe()
-                Log.v(TAG, "avg (${weightedAverageLocation.accuracy}) minus newThing loc (${newThing?.accuracy}): lat ${(weightedAverageLocation.latitude - (newThing?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (newThing?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
+                Log.v(TAG, "avg (${weightedAverageLocation.accuracy}) minus medianCullSafe loc (${newThing?.accuracy}): lat ${(weightedAverageLocation.latitude - (newThing?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (newThing?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
             }
             if (DEBUG) Log.d(TAG, "endOfPeriodProcessing(): reporting location")
             // for some weird reason, reporting may (very rarely) take REALLY long, even minutes

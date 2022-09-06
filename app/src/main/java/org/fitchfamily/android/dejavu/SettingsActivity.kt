@@ -20,7 +20,6 @@ package org.fitchfamily.android.dejavu
 */
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
@@ -35,10 +34,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.HandlerThread
-import android.os.Looper
 import android.preference.PreferenceActivity
 import android.preference.PreferenceManager
-import android.support.annotation.UiThread
 import android.util.Log
 import android.widget.*
 import kotlinx.coroutines.*
