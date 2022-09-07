@@ -15,7 +15,8 @@ This backend uses no network data. All data acquired by the phone stays on the p
 
 Modified version
 ================
-This version has several differences compared to *Déjà Vu*, see the [changelog](https://github.com/helium314/DejaVu/CHANGELOG.md) starting at 1.2.0.
+This version has several changes compared to *Déjà Vu*, see the [changelog](CHANGELOG.md) starting at 1.2.0-beta.
+Local NLP Backend is capable of using and importing any database used in *Déjà Vu*.
 
 Potential future improvements:
 * Improve method for determining which emitters to discard in case of conflicting position report
@@ -26,15 +27,15 @@ Potential future improvements:
 
 Requirements on phone
 =====================
-This is a plug-in for [µg UnifiedNlp](http://forum.xda-developers.com/android/apps-games/app-g-unifiednlp-floss-wi-fi-cell-tower-t2991544) which can be [installed from f-droid](https://f-droid.org/repository/browse/?fdfilter=unified&fdpage=1&page_id=0). The [µg GmsCore](http://forum.xda-developers.com/android/apps-games/app-microg-gmscore-floss-play-services-t3217616) can also use this backend.
+This is a plug-in for [microG](https://microg.org/) (UnifiedNlp or GmsCore).
 
 Setup on phone
 ==============
-In the NLP Controller app (interface for µg UnifiedNlp) select the "Local NLP Backend". If using GmsCore, then the little gear at microG Settings->UnifiedNlp Settings->Configure location backends->Local NLP Backend is used.
+In the NLP Controller app (interface for microG UnifiedNlp) select the "Local NLP Backend". If using GmsCore, you can find in in microG Settings -> Location modules. Tap on backend name for configuration UI.
 
 When enabled, microG will request you grant location permissions to this backend. This is required so that the backend can monitor mobile/cell tower data and so that it can monitor the positions reported by the GPS.
 
-Note: The microG configuration check requires a location from a location backend to indicate that it is setup properly. However this backend will not return a location until it has mapped at least one mobile cell tower or two WLAN/WiFi access points. So it is necessary to run an app that uses the GPS for a while before this backend will report information to microG. You may wish to also install a different backend to verify microG setup quickly.
+Note: The microG configuration check requires a location from a location backend to indicate that it is setup properly. However this backend will not return a location until it has mapped at least one mobile cell tower or two WLAN/WiFi access points, or data was imported. So it may be necessary to run an app that uses the GPS for a while before this backend will report information to microG. You may wish to also install a different backend to verify microG setup quickly.
 
 Collecting RF Emitter Data
 ======================
@@ -42,7 +43,7 @@ To conserve power the collection process does not actually turn on the GPS. If s
 
 What is stored in the database
 ------------------------------
-For each RF emitter detected an estimate of its coverage area (center and radius) and an estimate of how much it can be trusted is saved.
+For each RF emitter detected an estimate of its coverage area (center and radius) is saved.
 
 For WLAN/WiFi APs the SSID is also saved for debug purposes. Analysis of the SSIDs detected by the phone can help identify name patterns used on mobile APs. The backend removes records from the database if the RF emitter has a SSID that is associated with WLAN/WiFi APs that are often mobile (e.g. "Joes iPhone").
 
@@ -55,7 +56,11 @@ Permissions Required
 |Permission|Use|
 |:----------|:---|
 ACCESS_COARSE_LOCATION|Allows backend to determine which cell towers your phone detects.
-ACCESS_FINE_LOCATION|Allows backend to monitor position reports from the GPS.
+ACCESS_FINE_LOCATION|Allows backend to determine which WiFis your phone detect and monitor position reports from the GPS.
+CHANGE_WIFI_STATE|Allows backend to scan for nearby WiFis.
+ACCESS_WIFI_STATE|Allows backend to access WiFi scan results.
+
+Some permissions may not be necessary, this heavily depends on [Android version](https://developer.android.com/guide/topics/connectivity/wifi-scan).
 
 Changes
 =======
