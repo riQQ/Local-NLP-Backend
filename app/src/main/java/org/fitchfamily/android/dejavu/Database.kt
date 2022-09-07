@@ -20,11 +20,13 @@ package org.fitchfamily.android.dejavu
 *    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.content.Context
+import android.database.Cursor
+import android.database.DatabaseUtils
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
-import android.database.sqlite.SQLiteStatement
 import android.util.Log
 
 /**
@@ -37,14 +39,11 @@ import android.util.Log
  * thread safe. However all access to the database is through the Cache object
  * which is thread safe.
  */
-class Database(context: Context?, name: String = NAME) : // allow overriding name, useful for importing db
+class Database(context: Context?, name: String = DB_NAME) : // allow overriding name, useful for importing db
     SQLiteOpenHelper(context, name, null, VERSION) {
     private val database: SQLiteDatabase get() = writableDatabase
     private var withinTransaction = false
     private var updatesMade = false
-    private var sqlSampleInsert: SQLiteStatement? = null
-    private var sqlSampleUpdate: SQLiteStatement? = null
-    private var sqlAPdrop: SQLiteStatement? = null
 
     override fun onCreate(db: SQLiteDatabase) {
         withinTransaction = false
@@ -67,12 +66,28 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
         onUpgrade(db, 1, VERSION)
     }
 
+    @SuppressLint("Recycle") // cursor is closed in toSequence
+    private fun <T> query(
+        columns: Array<String>? = null,
+        where: String? = null,
+        args: Array<String>? = null,
+        groupBy: String? = null,
+        having: String? = null,
+        orderBy: String? = null,
+        limit: String? = null,
+        distinct: Boolean = false,
+        transform: (CursorPosition) -> T
+    ): Sequence<T> {
+        return database.query(distinct, TABLE_SAMPLES, columns, where, args, groupBy, having, orderBy, limit).toSequence(transform)
+    }
+
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) upGradeToVersion2(db)
         if (oldVersion < 3) upGradeToVersion3(db)
         if (oldVersion < 4) upGradeToVersion4(db)
     }
 
+    @SuppressLint("SQLiteString") // issue is known and fixed later, but keep this old code exactly as it was
     private fun upGradeToVersion2(db: SQLiteDatabase) {
         if (DEBUG) Log.d(TAG, "upGradeToVersion2(): Entry")
         // Sqlite3 does not support dropping columns so we create a new table with our
@@ -153,8 +168,7 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
         val query = ("SELECT " +
                 COL_RFID + "," + COL_TYPE + "," + OLD_COL_TRUST + "," + COL_LAT + "," + COL_LON + "," + COL_RAD_NS + "," + COL_RAD_EW + "," + COL_NOTE + " " +
                 "FROM " + TABLE_SAMPLES + ";")
-        val cursor = db.rawQuery(query, null)
-        try {
+        db.rawQuery(query, null).use { cursor ->
             if (cursor!!.moveToFirst()) {
                 do {
                     val rfId = cursor.getString(0)
@@ -176,8 +190,6 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
                     insert.clearBindings()
                 } while (cursor.moveToNext())
             }
-        } finally {
-            cursor?.close()
         }
         db.execSQL("DROP TABLE $TABLE_SAMPLES;")
         db.execSQL("ALTER TABLE ${TABLE_SAMPLES}_new RENAME TO $TABLE_SAMPLES;")
@@ -185,11 +197,10 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
     }
 
     private fun upGradeToVersion4(db: SQLiteDatabase) {
-        // another upgrade
-        // remove hash column
+        // We replace the rfId hash with the actual rfId
         //  mobile emitter IDs are already unique
-        //  wifi emitters get wifi type prepended
-        // remove trust column (whole trust system and removal of emitters removed)
+        //  WiFi emitters get WiFi type prefixed
+        // Trust column is removed, like the whole trust system
         db.execSQL("BEGIN TRANSACTION;")
         db.execSQL("""
             CREATE TABLE IF NOT EXISTS ${TABLE_SAMPLES}_new (
@@ -240,11 +251,6 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
 
     /**
      * Start an update operation.
-     *
-     * We make sure we are not already in a transaction, make sure
-     * our database is writeable, compile the insert, update and drop
-     * statements that are likely to be used, etc. Then we actually
-     * start the transaction on the underlying SQL database.
      */
     fun beginTransaction() {
         if (withinTransaction) {
@@ -253,33 +259,6 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
         }
         withinTransaction = true
         updatesMade = false
-        sqlSampleInsert = database.compileStatement(
-            ("INSERT INTO " +
-                    TABLE_SAMPLES + "(" +
-                    COL_RFID + ", " +
-                    COL_TYPE + ", " +
-                    COL_LAT + ", " +
-                    COL_LON + ", " +
-                    COL_RAD_NS + ", " +
-                    COL_RAD_EW + ", " +
-                    COL_NOTE + ") " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?);")
-        )
-        sqlSampleUpdate = database.compileStatement(
-            ("UPDATE " +
-                    TABLE_SAMPLES + " SET " +
-                    COL_LAT + "=?, " +
-                    COL_LON + "=?, " +
-                    COL_RAD_NS + "=?, " +
-                    COL_RAD_EW + "=?, " +
-                    COL_NOTE + "=? " +
-                    "WHERE " + COL_RFID + "=?;")
-        )
-        sqlAPdrop = database.compileStatement(
-            ("DELETE FROM " +
-                    TABLE_SAMPLES +
-                    " WHERE " + COL_RFID + "=?;")
-        )
         database.beginTransaction()
     }
 
@@ -291,10 +270,22 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
     fun endTransaction() {
         if (!withinTransaction) {
             if (DEBUG) Log.d(TAG, "Asked to end transaction but we are not in one???")
+            return
         }
-        if (updatesMade) {
-            //Log.d(TAG,"endTransaction() - Setting transaction successful.");
+        if (updatesMade)
             database.setTransactionSuccessful()
+        updatesMade = false
+        database.endTransaction()
+        withinTransaction = false
+    }
+
+    /**
+     * End a transaction without marking it as successful.
+     */
+    fun cancelTransaction() {
+        if (!withinTransaction) {
+            if (DEBUG) Log.d(TAG, "Asked to end transaction but we are not in one???")
+            return
         }
         updatesMade = false
         database.endTransaction()
@@ -308,9 +299,7 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
      */
     fun drop(emitter: RfEmitter) {
         if (DEBUG) Log.d(TAG, "Dropping " + emitter.logString + " from db")
-        sqlAPdrop!!.bindString(1, emitter.uniqueId)
-        sqlAPdrop!!.executeInsert()
-        sqlAPdrop!!.clearBindings()
+        database.delete(TABLE_SAMPLES, "$COL_RFID = '${emitter.uniqueId}'", null)
         updatesMade = true
     }
 
@@ -319,36 +308,70 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
      *
      * @param emitter The emitter to be added.
      */
-    fun insert(emitter: RfEmitter) {
-        if (DEBUG) Log.d(TAG, "Inserting " + emitter.logString + " into db")
-        sqlSampleInsert!!.bindString(1, emitter.uniqueId)
-        sqlSampleInsert!!.bindString(2, emitter.type.toString())
-        sqlSampleInsert!!.bindString(3, emitter.lat.toString())
-        sqlSampleInsert!!.bindString(4, emitter.lon.toString())
-        sqlSampleInsert!!.bindString(5, emitter.radiusNS.toString())
-        sqlSampleInsert!!.bindString(6, emitter.radiusEW.toString())
-        sqlSampleInsert!!.bindString(7, emitter.note)
-        sqlSampleInsert!!.executeInsert()
-        sqlSampleInsert!!.clearBindings()
+    fun insert(emitter: RfEmitter, collision: Int = SQLiteDatabase.CONFLICT_ABORT) {
+        val cv = ContentValues(7).apply {
+            put(COL_RFID, emitter.uniqueId)
+            put(COL_TYPE, emitter.type.toString())
+            put(COL_LAT, emitter.lat)
+            put(COL_LON, emitter.lon)
+            put(COL_RAD_NS, emitter.radiusNS)
+            put(COL_RAD_EW, emitter.radiusEW)
+            put(COL_NOTE, emitter.note)
+        }
+        insertWithCollision(cv, collision)
+    }
+
+    fun insertLine(collision: Int, rfId: String, type: String, lat: Double, lon: Double, radius_ns: Double, radius_ew: Double, note: String) {
+        val cv = ContentValues(7).apply {
+            put(COL_RFID, rfId)
+            put(COL_TYPE, type)
+            put(COL_LAT, lat)
+            put(COL_LON, lon)
+            put(COL_RAD_NS, radius_ns)
+            put(COL_RAD_EW, radius_ew)
+            put(COL_NOTE, note)
+        }
+        insertWithCollision(cv, collision)
+    }
+
+    private fun insertWithCollision(cv: ContentValues, collision: Int) {
+        if (DEBUG) Log.d(TAG, "Inserting $cv into db with collision $collision")
+        if (collision == COLLISION_MERGE && database.insertWithOnConflict(TABLE_SAMPLES, null, cv, SQLiteDatabase.CONFLICT_IGNORE) == -1L) { // -1 is returned if a conflict is detected
+            // trying to insert, but row exists and we want to merge
+            val bboxOld = query(arrayOf(COL_LAT, COL_LON, COL_RAD_NS, COL_RAD_EW), "$COL_RFID = '${cv.getAsString(COL_RFID)}'", limit = "1") {
+                val ew = it.getDouble(COL_RAD_EW)
+                if (ew < 0) null
+                else BoundingBox(it.getDouble(COL_LAT), it.getDouble(COL_LON), it.getDouble(COL_RAD_NS), ew)
+            }.firstOrNull()
+            val bboxNew = BoundingBox(cv.getAsDouble(COL_LAT), cv.getAsDouble(COL_LON), cv.getAsDouble(COL_RAD_NS), cv.getAsDouble(COL_RAD_EW))
+            if (bboxNew == bboxOld) return
+            if (bboxOld != null) {
+                bboxNew.update(bboxOld.south, bboxOld.east)
+                bboxNew.update(bboxOld.north, bboxOld.west)
+            }
+            val cvUpdate = ContentValues(4).apply {
+                put(COL_LAT, bboxNew.center_lat)
+                put(COL_LON, bboxNew.center_lon)
+                put(COL_RAD_NS, bboxNew.radius_ns)
+                put(COL_RAD_EW, bboxNew.radius_ew)
+            }
+            database.update(TABLE_SAMPLES, cvUpdate, "$COL_RFID = '${cv.getAsString(COL_RFID)}'", null)
+        } else if (collision != COLLISION_MERGE)
+            database.insertWithOnConflict(TABLE_SAMPLES, null, cv, collision)
         updatesMade = true
     }
 
-    // atm this is a copy of update with radii set to -1
-    // todo: make nice when actually simplifying db access stuff
     fun setInvalid(emitter: RfEmitter) {
         if (DEBUG) Log.d(TAG, "Setting to invalid: " + emitter.logString)
-
-        // the data fields
-        sqlSampleUpdate!!.bindString(1, emitter.lat.toString())
-        sqlSampleUpdate!!.bindString(2, emitter.lon.toString())
-        sqlSampleUpdate!!.bindString(3, (-1).toString())
-        sqlSampleUpdate!!.bindString(4, (-1).toString())
-        sqlSampleUpdate!!.bindString(5, emitter.note)
-
-        // the Where fields
-        sqlSampleUpdate!!.bindString(6, emitter.uniqueId)
-        sqlSampleUpdate!!.executeInsert()
-        sqlSampleUpdate!!.clearBindings()
+        database.update(
+            TABLE_SAMPLES,
+            ContentValues(2).apply {
+                put(COL_RAD_NS, -1.0)
+                put(COL_RAD_EW, -1.0)
+            },
+            "$COL_RFID = '${emitter.uniqueId}'",
+            null
+        )
         updatesMade = true
     }
 
@@ -359,195 +382,63 @@ class Database(context: Context?, name: String = NAME) : // allow overriding nam
      */
     fun update(emitter: RfEmitter) {
         if (DEBUG) Log.d(TAG, "Updating " + emitter.logString)
-
-        // the data fields
-        sqlSampleUpdate!!.bindString(1, emitter.lat.toString())
-        sqlSampleUpdate!!.bindString(2, emitter.lon.toString())
-        sqlSampleUpdate!!.bindString(3, emitter.radiusNS.toString())
-        sqlSampleUpdate!!.bindString(4, emitter.radiusEW.toString())
-        sqlSampleUpdate!!.bindString(5, emitter.note)
-
-        // the Where fields
-        sqlSampleUpdate!!.bindString(6, emitter.uniqueId)
-        sqlSampleUpdate!!.executeInsert()
-        sqlSampleUpdate!!.clearBindings()
+        val cv = ContentValues(5).apply {
+            put(COL_LAT, emitter.lat)
+            put(COL_LON, emitter.lon)
+            put(COL_RAD_NS, emitter.radiusNS)
+            put(COL_RAD_EW, emitter.radiusEW)
+            put(COL_NOTE, emitter.note)
+        }
+        database.update(TABLE_SAMPLES, cv, "$COL_RFID = '${emitter.uniqueId}'", null)
         updatesMade = true
-    }
-
-    private fun getRfId(dbId: String, type: EmitterType) =
-        when (type) {
-            EmitterType.WLAN2, EmitterType.WLAN5, EmitterType.WLAN6 -> RfIdentification(dbId.substringAfter('/'), type)
-            else -> RfIdentification(dbId, type)
-        }
-
-    // get multiple emitters instead of querying one by one
-    fun getEmitters(ids: Collection<RfIdentification>): List<RfEmitter> {
-        if (ids.isEmpty()) return emptyList()
-        val idString = ids.joinToString(",") { "'${it.uniqueId}'" }
-        val query = ("SELECT " +
-                COL_TYPE + ", " +
-                COL_LAT + ", " +
-                COL_LON + ", " +
-                COL_RAD_NS + ", " +
-                COL_RAD_EW + ", " +
-                COL_NOTE + ", " +
-                COL_RFID + " " +
-                " FROM " + TABLE_SAMPLES +
-                " WHERE " + COL_RFID + " IN (" + idString + ");")
-
-        if (DEBUG) Log.d(TAG, "getEmitters(ids): $idString")
-        val c = database.rawQuery(query, null)
-        val emitters = mutableListOf<RfEmitter>()
-        c.use { cursor ->
-            if (cursor!!.moveToFirst()) {
-                do {
-                    val info = EmitterInfo(
-                        latitude = cursor.getDouble(1),
-                        longitude = cursor.getDouble(2),
-                        radius_ns = cursor.getDouble(3),
-                        radius_ew = cursor.getDouble(4),
-                        note = cursor.getString(5) ?: ""
-                    )
-                    val result = RfEmitter(
-                        getRfId(
-                            cursor.getString(6),
-                            EmitterType.valueOf(cursor.getString(0))
-                        ), info)
-                    emitters.add(result)
-                } while (cursor.moveToNext())
-            }
-        }
-        if (DEBUG) {
-            if (ids.size != emitters.size)
-                Log.d(TAG, "getEmitters(ids): not all emitters found, returning ${emitters.map { it.uniqueId }}")
-        }
-        return emitters
     }
 
     /**
      * Get all the information we have on a single RF emitter
      *
-     * @param identification The identification of the emitter caller wants
+     * @param rfId The identification of the emitter caller wants
      * @return A emitter object with all the information we have. Or null if we have nothing.
      */
-    fun getEmitter(identification: RfIdentification): RfEmitter? {
-        val result: RfEmitter?
-        val query = ("SELECT " +
-                COL_LAT + ", " +
-                COL_LON + ", " +
-                COL_RAD_NS + ", " +
-                COL_RAD_EW + ", " +
-                COL_NOTE + " " +
-                " FROM " + TABLE_SAMPLES +
-                " WHERE " + COL_RFID + "='" + identification.uniqueId + "';")
+    fun getEmitter(rfId: RfIdentification) =
+        query(
+            arrayOf(COL_LAT, COL_LON, COL_RAD_NS, COL_RAD_EW, COL_NOTE),
+            "$COL_RFID = '${rfId.uniqueId}'",
+            limit = "1"
+        ) { it.toRfEmitter(rfId) }.firstOrNull()
 
-        if (DEBUG) Log.d(TAG, "getEmitter(): $identification")
-        database.rawQuery(query, null).use { cursor ->
-            result = if (cursor!!.moveToFirst()) {
-                val ei = EmitterInfo(
-                    latitude = cursor.getDouble(0),
-                    longitude = cursor.getDouble(1),
-                    radius_ns = cursor.getDouble(2),
-                    radius_ew = cursor.getDouble(3),
-                    note = cursor.getString(4) ?: ""
-                )
-                RfEmitter(identification, ei)
-            } else null
-        }
-        return result
+    // get multiple emitters instead of querying one by one
+    fun getEmitters(rfIds: Collection<RfIdentification>): List<RfEmitter> {
+        val idString = rfIds.joinToString(",") { "'${it.uniqueId}'" }
+        return query(allColumns, "$COL_RFID IN ($idString)") { it.toRfEmitter() }.toList()
     }
 
-    fun getAll(): Sequence<RfEmitter> {
-        val query = ("SELECT " +
-                COL_TYPE + ", " +
-                COL_LAT + ", " +
-                COL_LON + ", " +
-                COL_RAD_NS + ", " +
-                COL_RAD_EW + ", " +
-                COL_NOTE + ", " +
-                COL_RFID + " " +
-                " FROM " + TABLE_SAMPLES + ";")
+    fun getAll() = query(allColumns) { it.toRfEmitter() }
 
-        val c = database.rawQuery(query, null) // db is closed afterwards, so not freeing should not matter
-        return generateSequence {
-            if (c.moveToNext()) {
-                val info = EmitterInfo(
-                    latitude = c.getDouble(1),
-                    longitude = c.getDouble(2),
-                    radius_ns = c.getDouble(3),
-                    radius_ew = c.getDouble(4),
-                    note = c.getString(5) ?: ""
-                )
-                try {
-                    EmitterType.valueOf(c.getString(0))
-                } catch(e: IllegalArgumentException) {
-                    null
-                }?.let {
-                    RfEmitter(
-                        getRfId(
-                            c.getString(6),
-                            EmitterType.valueOf(c.getString(0))
-                        ), info)
-                }
-            } else null
-        }
-    }
-
-    fun putLine(collision: Int, rfId: String, type: String, lat: Double, lon: Double, radius_ns: Double, radius_ew: Double, note: String) {
-        val cv = ContentValues().apply {
-            put(COL_RFID, rfId)
-            put(COL_TYPE, type)
-            put(COL_LAT, lat)
-            put(COL_LON, lon)
-            put(COL_RAD_NS, radius_ns)
-            put(COL_RAD_EW, radius_ew)
-            put(COL_NOTE, note)
-        }
-        if (collision == 0 && database.insertWithOnConflict(TABLE_SAMPLES, null, cv, SQLiteDatabase.CONFLICT_IGNORE) == -1L) { // -1 is returned if a conflict is detected
-            // trying to insert, but row exists and we want to merge
-            val bboxOld: BoundingBox
-            database.rawQuery("SELECT $COL_LAT, $COL_LON, $COL_RAD_NS, $COL_RAD_EW FROM $TABLE_SAMPLES WHERE $COL_RFID = '$rfId';", null). use {
-                it.moveToFirst()
-                bboxOld = BoundingBox(it.getDouble(0), it.getDouble(1), it.getDouble(2), it.getDouble(3))
-            }
-            val bboxNew = BoundingBox(lat, lon, radius_ns, radius_ew)
-            if (bboxNew == bboxOld) return
-            bboxNew.update(bboxOld.south, bboxOld.east)
-            bboxNew.update(bboxOld.north, bboxOld.west)
-            val cv2 = ContentValues().apply {
-                put(COL_RFID, rfId)
-                put(COL_TYPE, type)
-                put(COL_LAT, bboxNew.center_lat)
-                put(COL_LON, bboxNew.center_lon)
-                put(COL_RAD_NS, bboxNew.radius_ns)
-                put(COL_RAD_EW, bboxNew.radius_ew)
-                put(COL_NOTE, note)
-            }
-            database.insertWithOnConflict(TABLE_SAMPLES, null, cv2, SQLiteDatabase.CONFLICT_REPLACE)
-        } else if (collision != 0)
-            database.insertWithOnConflict(TABLE_SAMPLES, null, cv, collision)
-    }
-
-    companion object {
-        private const val TAG = "LocalNLP DB"
-        private val DEBUG = BuildConfig.DEBUG
-        private const val VERSION = 4
-        const val NAME = "rf.db"
-        const val TABLE_SAMPLES = "emitters"
-        const val COL_TYPE = "rfType"
-        const val COL_RFID = "rfID"
-        const val COL_LAT = "latitude"
-        const val COL_LON = "longitude"
-        const val COL_RAD_NS = "radius_ns" // v2 of database
-        const val COL_RAD_EW = "radius_ew" // v2 of database
-        const val COL_NOTE = "note"
-
-        // columns used in old db versions
-        private const val OLD_COL_HASH = "rfHash" // v3 of database, removed in v4
-        private const val OLD_COL_TRUST = "trust" // removed in v4
-        private const val OLD_COL_RAD = "radius" // v1 of database
-    }
+    fun getSize() = DatabaseUtils.queryNumEntries(database, TABLE_SAMPLES)
 }
+
+private const val TAG = "LocalNLP DB"
+private val DEBUG = BuildConfig.DEBUG
+
+private const val DB_NAME = "rf.db"
+private const val TABLE_SAMPLES = "emitters"
+private const val VERSION = 4
+const val COL_TYPE = "rfType"
+const val COL_RFID = "rfID"
+const val COL_LAT = "latitude"
+const val COL_LON = "longitude"
+const val COL_RAD_NS = "radius_ns" // v2 of database
+const val COL_RAD_EW = "radius_ew" // v2 of database
+const val COL_NOTE = "note"
+// columns used in old db versions
+private const val OLD_COL_HASH = "rfHash" // v3 of database, removed in v4
+private const val OLD_COL_TRUST = "trust" // removed in v4
+private const val OLD_COL_RAD = "radius" // v1 of database
+
+const val COLLISION_MERGE = 0 // merge emitters on collision when inserting
+
+private val allColumns = arrayOf(COL_RFID, COL_TYPE, COL_LAT, COL_LON, COL_RAD_NS, COL_RAD_EW, COL_NOTE)
+private val wifis = hashSetOf(EmitterType.WLAN2, EmitterType.WLAN5, EmitterType.WLAN6)
 
 class EmitterInfo(
     val latitude: Double,
@@ -556,3 +447,37 @@ class EmitterInfo(
     val radius_ew: Double,
     val note: String
 )
+
+private class CursorPosition(private val cursor: Cursor) {
+    fun getDouble(columnName: String): Double = cursor.getDouble(index(columnName))
+    fun getString(columnName: String): String = cursor.getString(index(columnName))
+
+    private fun index(columnName: String): Int = cursor.getColumnIndexOrThrow(columnName)
+}
+
+private inline fun <T> Cursor.toSequence(crossinline transform: (CursorPosition) -> T): Sequence<T> {
+    val c = CursorPosition(this)
+    moveToFirst()
+    return generateSequence {
+        if (!isAfterLast) {
+            val r = transform(c)
+            moveToNext()
+            r
+        } else {
+            close()
+            null
+        }
+    }
+}
+
+private fun CursorPosition.toRfEmitter(rfId: RfIdentification? = null): RfEmitter {
+    val info = EmitterInfo(getDouble(COL_LAT), getDouble(COL_LON), getDouble(COL_RAD_NS), getDouble(COL_RAD_EW), getString(COL_NOTE))
+    return if (rfId == null) {
+        val type = EmitterType.valueOf(getString(COL_TYPE))
+        val dbId = getString(COL_RFID)
+        val id = if (type in wifis) dbId.substringAfter('/')
+                else dbId
+        RfEmitter(type, id, info)
+    } else
+        RfEmitter(rfId, info)
+}

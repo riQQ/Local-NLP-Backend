@@ -8,11 +8,11 @@ android {
         minSdkVersion 18
         // problem1: TelephonyManager.neighboringCellInfo is removed in API 29, but some old phones need it
         // problem2: support for 5G and 6 GHz WiFi is added in higher APIs
-        // -> first release version with old API, then upgrade
+        // -> first release non-beta version with old API, then upgrade
         targetSdkVersion 28
-        versionCode 23
-        versionName "1.2.0-beta"
-        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        versionCode 24
+        versionName "1.2.0-beta.2"
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
     buildTypes {
         release {
@@ -29,20 +29,7 @@ android {
 }
 
 dependencies {
-    implementation 'com.android.support:appcompat-v7:28.0.0'
+    implementation 'androidx.appcompat:appcompat:1.0.0'
     implementation 'org.microg:unifiednlp-api:1.5.6'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.0'
-}
-
-tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {
-    sourceCompatibility = JavaVersion.VERSION_1_8
-    targetCompatibility = JavaVersion.VERSION_1_8
-
-    kotlinOptions {
-        jvmTarget = '1.8'
-        kotlinOptions {
-            freeCompilerArgs += ['-XXLanguage:+InlineClasses']
-            freeCompilerArgs += ['-progressive']
-        }
-    }
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.4'
 }

@@ -1,0 +1,7 @@
+- Progress bars for import and export
+- fix MLS import for LTE cells
+- fix import of files exported with Local NLP Backend
+- faster import
+- reworked database code
+- upgrade dependencies
+- prepare for API upgrade (will remove deprecated getNeighboringCellInfo function, which may be used by some old devices)

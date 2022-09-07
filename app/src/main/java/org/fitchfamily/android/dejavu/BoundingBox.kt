@@ -114,4 +114,10 @@ class BoundingBox private constructor() {
         north > location.latitude && south < location.latitude
                 && east > location.longitude && west < location.longitude
 
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is BoundingBox) return false
+        return center_lat == other.center_lat && center_lon == other.center_lon
+                && radius_ns == other.radius_ns && radius_ew == other.radius_ew
+    }
 }

@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Removed
 - Not applicable
 
+## [1.2.0-beta.2] - 2022-09-08
+### Added
+- Progress bars for import and export
+
+### Changed
+- fix MLS import for LTE cells
+- fix import of files exported with Local NLP Backend
+- faster import
+- reworked database code
+- upgrade dependencies
+- prepare for API upgrade (will remove deprecated getNeighboringCellInfo function, which may be used by some old devices)
+
 ## [1.2.0-beta] - 2022-09-07
 ### Added
 - UI with capabilities to import/export emitters, show nearby emitters, select whether to use mobile cells and/or WiFi emitters, enable Kalman position filtering, and decide how to decide which emitters should be discarded in case of conflicting position reports.

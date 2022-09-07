@@ -554,6 +554,7 @@ class BackendService : LocationBackendService() {
      * Call back method entered when Android has completed a scan for WiFi emitters in
      * the area.
      */
+    @SuppressLint("MissingPermission")
     @Synchronized
     private fun onWiFisChanged() {
         val scanResults = wifiManager.scanResults

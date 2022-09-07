@@ -6,6 +6,11 @@
     <string name="pref_export_title">Export data</string>
     <string name="pref_export_summary">Write all data to a CSV file</string>
     <string name="export_jb">Export is only supported on KitKat and above</string>
+    <string name="export_canceled">Export canceled</string>
+    <string name="export_title">Exporting…</string>
+    <string name="export_message">This may take a few minutes, please wait.</string>
+    <string name="export_done">Export finished</string>
+    <string name="export_error">Error while exporting: %s</string>
     <string name="pref_kalman_title">Use Kalman filter for GPS location</string>
     <string name="pref_kalman_summary">Recommended for devices with bad GPS</string>
     <string name="pref_use_cell_title">Use cell tower locations</string>
@@ -19,7 +24,8 @@
     <string name="pref_cull_message">Default (used in Déjà Vu): only use the largest consistent group of emitters. This usually gives good accuracy, but occasionally produces wrong locations.\n\n
 Median: discard emitters that are unbelievably far from the median location: somewhat worse accuracy than default, but reduced chance of wrong locations.\n\n
 Use all emitters: sensitive to extreme outliers and often the least accurate of the three, but most likely to contain the actual location inside the accuracy circle.\n\n
-Often all 3 methods give (nearly) the same results, expect to see a difference only in some cases.
+Often all 3 methods give (nearly) the same results, expect to see a difference only in some cases.\n\n
+Current setting: %s
     </string>
     <string name="pref_cull_default">Default</string>
     <string name="pref_cull_median">Median</string>
@@ -36,6 +42,10 @@ Often all 3 methods give (nearly) the same results, expect to see a difference o
     <string name="import_mls_use_type">Use %s</string>
     <string name="import_mls_title">Import from MLS file</string>
     <string name="import_mls_country_code_message">Enter country codes to import, comma separated. Leave blank to import all.</string>
+    <string name="import_title">Importing…</string>
+    <string name="import_canceled">Import canceled, no changes made</string>
+    <string name="import_number_progress">%1$d imported, %2$d skipped</string>
+    <string name="import_done">Import finished</string>
     <string name="show_scan_started">Scanning…</string>
     <string name="show_scan_start_failed">Scanning failed, maybe the backend service is disabled</string>
     <string name="show_scan_results">Nearby emitters</string>

@@ -20,41 +20,35 @@ package org.fitchfamily.android.dejavu
 */
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
-import android.app.AlertDialog
+import android.app.ProgressDialog
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
-import android.location.Location
-import android.location.LocationListener
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.HandlerThread
 import android.preference.PreferenceActivity
 import android.preference.PreferenceManager
 import android.util.Log
 import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import kotlinx.coroutines.*
 import java.io.File
 
+// deprecated, but replacement is annoying to handle...
 class SettingsActivity : PreferenceActivity() {
-
-    // TODO: needs more testing
-    //  export: ?
-    //  import:
-    //   from export
-    //   from mls: works, filters too
-    //   from db file
 
     private var settingsChanged = false
     private val prefs: SharedPreferences by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener {_, key ->
         settingsChanged = true
     }
+    private val scope = CoroutineScope(SupervisorJob())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -94,10 +88,14 @@ class SettingsActivity : PreferenceActivity() {
     }
 
     private fun onClickCull() {
-        // todo: make a nicer radio button menu, with current selection being shown
+        val currentChoice = when (prefs.getInt(PREF_CULL, 0)) {
+            1 -> R.string.pref_cull_median
+            2 -> R.string.pref_cull_none
+            else -> R.string.pref_cull_default
+        }
         AlertDialog.Builder(this)
-            .setTitle(R.string.pref_cull_title)
-            .setMessage(R.string.pref_cull_message)
+            .setTitle(getString(R.string.pref_cull_title))
+            .setMessage(getString(R.string.pref_cull_message, getString(currentChoice)))
             .setPositiveButton(R.string.pref_cull_default) { _,_ -> prefs.edit().putInt(PREF_CULL, 0).apply() }
             .setNeutralButton(R.string.pref_cull_median) { _,_ -> prefs.edit().putInt(PREF_CULL, 1).apply() }
             .setNegativeButton(R.string.pref_cull_none) { _,_ -> prefs.edit().putInt(PREF_CULL, 2).apply() }
@@ -146,68 +144,131 @@ class SettingsActivity : PreferenceActivity() {
 
         // but first open a dialog
         // what to do on collisions (keep local, overwrite, merge)
-        // TODO:
-        //  make the import faster, it's horribly slow (10 min for 300k emitters)
-        //   and show progress bar instead of blocking ui
-        //   don't create intermediate emitters? would avoid unnecessary checks for size and blacklist
-        //   but first check which parts are slow
         val collisionReplace = SQLiteDatabase.CONFLICT_REPLACE
         val collisionKeep = SQLiteDatabase.CONFLICT_IGNORE
         val collisionMerge = 0
 
         fun readFromFile(collision: Int, readFormat: Int, mlsIgnoreTypes: Set<String>, mlsCountryCodes: Set<String>) {
             val db = Database(this)
-            reader.useLines {
-                val iter = it.iterator()
-                var line: String
-                while (iter.hasNext()) {
-                    line = iter.next()
-                    try {
-                        val splitLine = parseLine(line, readFormat, mlsIgnoreTypes, mlsCountryCodes) ?: continue
-                        db.putLine(
-                            collision,
-                            splitLine[0],
-                            splitLine[1],
-                            splitLine[2].toDouble(),
-                            splitLine[3].toDouble(),
-                            splitLine[4].toDouble(),
-                            splitLine[5].toDouble(),
-                            splitLine[6]
-                        )
-                    } catch (e: Exception) {
-                        Toast.makeText(this, getString(R.string.import_error_line, line), Toast.LENGTH_LONG).show()
-                        Log.i(TAG, "import from file: error parsing line $line", e)
-                        break
+            val pd = ProgressDialog(this)
+            var importJob: Job? = null
+            var i = 0
+            var j = 0
+            pd.setTitle(R.string.import_title)
+            pd.setMessage(getString(R.string.import_number_progress, i, j))
+            pd.setOnCancelListener {
+                importJob?.cancel()
+                Toast.makeText(this, R.string.import_canceled, Toast.LENGTH_LONG).show()
+            }
+            pd.show()
+            val sa = this
+            importJob = scope.launch(Dispatchers.IO) {
+                db.beginTransaction()
+                reader.useLines {
+                    val iter = it.iterator()
+                    var line: String
+                    while (iter.hasNext()) {
+                        line = iter.next()
+                        try {
+                            val splitLine = parseLine(line, readFormat, mlsIgnoreTypes, mlsCountryCodes)
+                            if (splitLine == null) j++
+                            else {
+                                db.insertLine(
+                                    collision,
+                                    splitLine[0],
+                                    splitLine[1],
+                                    splitLine[2].toDouble(),
+                                    splitLine[3].toDouble(),
+                                    splitLine[4].toDouble(),
+                                    splitLine[5].toDouble(),
+                                    splitLine[6]
+                                )
+                                i++
+                            }
+                            if ((i + j) % 500 == 0) {
+
+                                runOnUiThread { pd.setMessage(getString(R.string.import_number_progress, i, j)) }
+                                if (!coroutineContext.isActive) {
+                                    db.cancelTransaction()
+                                    break
+                                }
+                            }
+                        } catch (e: Exception) {
+                            db.cancelTransaction()
+                            Log.w(TAG, "import / readFromFile - error parsing line $line", e)
+                            runOnUiThread { Toast.makeText(sa, getString(R.string.import_error_line, line), Toast.LENGTH_LONG).show() }
+                            break
+                        }
                     }
                 }
+                db.endTransaction()
+                db.close()
+                inputStream.close()
+                pd.dismiss()
+                runOnUiThread { Toast.makeText(sa, R.string.import_done, Toast.LENGTH_LONG).show() }
             }
+        }
 
-            db.close()
-            inputStream.close()
+        fun readFromDatabase(collision: Int) {
+            val db = Database(this)
+            val dbFile = File(this.applicationInfo.dataDir + File.separator + "databases" + File.separator + "tmp.db")
+            dbFile.delete()
+            dbFile.parentFile?.mkdirs()
+            val pd = ProgressDialog(this)
+            var importJob: Job? = null
+            pd.setTitle(R.string.import_title)
+            pd.setMessage("0 / ?")
+            pd.setOnCancelListener {
+                importJob?.cancel()
+                Toast.makeText(this, R.string.import_canceled, Toast.LENGTH_LONG).show()
+            }
+            pd.show()
+            val sa = this
+            importJob = scope.launch(Dispatchers.IO) {
+                dbFile.outputStream().use { inputStream.copyTo(it) }
+                inputStream.close()
+                try {
+                    val otherDb = Database(sa, "tmp.db")
+                    val max = otherDb.getSize()
+                    pd.setMessage("0 / $max")
+                    // read each entry and copy it to db, respecting collision
+                    otherDb.beginTransaction()
+                    db.beginTransaction()
+                    var i = 0
+                    otherDb.getAll().forEach {
+                        db.insert(it, collision)
+                        i++
+                        if (i % 100 == 0) {
+                            runOnUiThread { pd.setMessage("$i / $max") }
+                            if (!coroutineContext.isActive) {
+                                db.cancelTransaction()
+                                db.close()
+                                otherDb.endTransaction()
+                                otherDb.close()
+                                dbFile.delete()
+                                return@launch
+                            }
+                        }
+                    }
+                    otherDb.endTransaction()
+                    otherDb.close()
+                } catch (e: Exception) {
+                    Log.w(TAG, "import / readFromDatabase - error", e)
+                    db.cancelTransaction()
+                    runOnUiThread { Toast.makeText(sa, getString(R.string.import_error_database, e.message), Toast.LENGTH_LONG).show() }
+                }
+                db.endTransaction()
+                dbFile.delete()
+                db.close()
+                pd.dismiss()
+                runOnUiThread { Toast.makeText(sa, R.string.import_done, Toast.LENGTH_LONG).show() }
+            }
         }
 
         fun import(collision: Int) {
             BackendService.instance?.onClose()
             if (uri.toString().endsWith(".db")) {
-                val db = Database(this)
-                val dbFile = File(this.applicationInfo.dataDir + File.separator + "databases" + File.separator + "tmp.db")
-                dbFile.delete()
-                dbFile.parentFile.mkdirs()
-                dbFile.outputStream().use { inputStream.copyTo(it) }
-                try {
-                    val otherDb = Database(this, "tmp.db")
-                    // read each entry and copy it to db, respecting collision
-                    otherDb.writableDatabase.beginTransaction()
-                    otherDb.getAll().forEach {
-                        db.putLine(collision, it.uniqueId, it.type.toString(), it.lat, it.lon, it.radiusNS, it.radiusEW, it.note)
-                    }
-                    otherDb.writableDatabase.endTransaction()
-                    otherDb.close()
-                } catch (e: Exception) {
-                    Toast.makeText(this, getString(R.string.import_error_database, e.message), Toast.LENGTH_LONG).show()
-                }
-                dbFile.delete()
-                db.close()
+                readFromDatabase(collision)
                 return
             }
             val firstLine = reader.readLine()
@@ -225,44 +286,46 @@ class SettingsActivity : PreferenceActivity() {
 
             val mlsIgnoreTypes = mutableSetOf<String>()
             val mlsCountryCodes = mutableSetOf<String>()
-            if (readFormat == 0) {
-                val gsmBox = CheckBox(this).apply {
-                    text = resources.getString(R.string.import_mls_use_type, "GSM")
-                    isChecked = true
-                }
-                val umtsBox = CheckBox(this).apply {
-                    text = resources.getString(R.string.import_mls_use_type, "UMTS")
-                    isChecked = true
-                }
-                val lteBox = CheckBox(this).apply {
-                    text = resources.getString(R.string.import_mls_use_type, "LTE")
-                    isChecked = true
-                }
-                val countryCodesText = TextView(this).apply { setText(R.string.import_mls_country_code_message) }
-                val countryCodes = EditText(this)
-                val layout = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    addView(gsmBox)
-                    addView(umtsBox)
-                    addView(lteBox)
-                    addView(countryCodesText)
-                    addView(countryCodes)
-                    setPadding(30, 10, 30, 10)
-                }
-                AlertDialog.Builder(this)
-                    .setTitle(R.string.import_mls_title)
-                    .setView(layout)
-                    .setPositiveButton(android.R.string.ok) { _, _ ->
-                        if (!gsmBox.isChecked) mlsIgnoreTypes.add("GSM")
-                        if (!umtsBox.isChecked) mlsIgnoreTypes.add("UMTS")
-                        if (!lteBox.isChecked) mlsIgnoreTypes.add("LTE")
-                        mlsCountryCodes.addAll(
-                            countryCodes.text.toString().split(',').map { it.trim() })
-                        readFromFile(collision, readFormat, mlsIgnoreTypes, mlsCountryCodes)
-                    }
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .show()
+            if (readFormat != 0) {
+                readFromFile(collision, readFormat, mlsIgnoreTypes, mlsCountryCodes)
+                return
             }
+            val gsmBox = CheckBox(this).apply {
+                text = resources.getString(R.string.import_mls_use_type, "GSM")
+                isChecked = true
+            }
+            val umtsBox = CheckBox(this).apply {
+                text = resources.getString(R.string.import_mls_use_type, "UMTS")
+                isChecked = true
+            }
+            val lteBox = CheckBox(this).apply {
+                text = resources.getString(R.string.import_mls_use_type, "LTE")
+                isChecked = true
+            }
+            val countryCodesText = TextView(this).apply { setText(R.string.import_mls_country_code_message) }
+            val countryCodes = EditText(this)
+            val layout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(gsmBox)
+                addView(umtsBox)
+                addView(lteBox)
+                addView(countryCodesText)
+                addView(countryCodes)
+                setPadding(30, 10, 30, 10)
+            }
+            AlertDialog.Builder(this)
+                .setTitle(R.string.import_mls_title)
+                .setView(layout)
+                .setPositiveButton(android.R.string.ok) { _, _ ->
+                    if (!gsmBox.isChecked) mlsIgnoreTypes.add("GSM")
+                    if (!umtsBox.isChecked) mlsIgnoreTypes.add("UMTS")
+                    if (!lteBox.isChecked) mlsIgnoreTypes.add("LTE")
+                    mlsCountryCodes.addAll(
+                        countryCodes.text.toString().split(',').map { it.trim() })
+                    readFromFile(collision, readFormat, mlsIgnoreTypes, mlsCountryCodes)
+                }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
         }
 
         AlertDialog.Builder(this)
@@ -281,13 +344,11 @@ class SettingsActivity : PreferenceActivity() {
         if (readFormat == 0) { // MLS cell export
             if (splitLine.first() in mlsIgnoreTypes || splitLine[1] !in mlsCountryCodes) return null
             val rfid = when (splitLine.first()) {
-                // todo: check whether this is really definitely correct!
-                //  maybe compare with MLS backend or stumbler
-                "GSM" -> "GSM/${splitLine[1]}/${splitLine[2]}/${splitLine[3]}/${splitLine[4]}" // GSM,202,0,42,26363
-                "UMTS" -> "WCDMA/${splitLine[1]}/${splitLine[2]}/${splitLine[3]}/${splitLine[4]}" // UMTS,202,0,6060,4655229
+                "GSM" -> "GSM/${splitLine[1]}/${splitLine[2]}/${splitLine[3]}/${splitLine[4]}" // GSM,202,0,42,26363 -> GSM/202/0/42/26363
+                "UMTS" -> "WCDMA/${splitLine[1]}/${splitLine[2]}/${splitLine[3]}/${splitLine[4]}" // UMTS,202,0,6060,4655229 -> WCDMA/202/0/6060/4655229
                 "LTE" -> {
                     if (splitLine[5].isEmpty()) return null // why is this the case so often?
-                    "LTE/${splitLine[1]}/${splitLine[2]}/${splitLine[3]}/${splitLine[5]}/${splitLine[4]}" //LTE,202,1,3126,35714457,20
+                    "LTE/${splitLine[1]}/${splitLine[2]}/${splitLine[4]}/${splitLine[5]}/${splitLine[3]}" //LTE,202,1,3126,35714457,20 -> LTE/202/1/35714457/20/3126
                 }
                 else -> ""
             }
@@ -301,37 +362,66 @@ class SettingsActivity : PreferenceActivity() {
     }
 
     private fun exportToFile(uri: Uri) {
-        // todo: show progress bar instead of blocking ui?
         val os = contentResolver?.openOutputStream(uri)?.bufferedWriter() ?: return
         BackendService.instance?.onClose()
         val db = Database(this)
-        os.write("database v4\n")
-        os.write("${Database.COL_RFID},${Database.COL_TYPE},${Database.COL_LAT},${Database.COL_LON},${Database.COL_RAD_NS},${Database.COL_RAD_EW},${Database.COL_NOTE}\n")
-        db.writableDatabase.beginTransaction()
-        // 90s for exporting 300k emitters / 30 MB -> not great, but ok
-        db.getAll().forEach { os.write("${it.uniqueId},${it.type},${it.lat},${it.lon},${it.radiusNS},${it.radiusEW},${it.note}\n") }
-        db.writableDatabase.endTransaction()
-        os.close()
-        db.close()
+        val pd = ProgressDialog(this)
+        var exportJob: Job? = null
+        val max = db.getSize()
+        pd.setTitle(R.string.export_title)
+        pd.setMessage("0 / $max")
+        pd.setOnCancelListener {
+            exportJob?.cancel()
+            Toast.makeText(this, R.string.export_canceled, Toast.LENGTH_LONG).show()
+        }
+        pd.show()
+        val sa = this
+        exportJob = scope.launch(Dispatchers.IO) {
+            try {
+                os.write("database v4\n")
+                os.write("${COL_RFID},${COL_TYPE},${COL_LAT},${COL_LON},${COL_RAD_NS},${COL_RAD_EW},${COL_NOTE}\n")
+                db.beginTransaction()
+                // 90s for exporting 300k emitters / 30 MB -> not great, but ok
+                var i = 0
+                db.getAll().forEach {
+                    os.write("${it.uniqueId},${it.type},${it.lat},${it.lon},${it.radiusNS},${it.radiusEW},${it.note}\n")
+                    i++
+                    if (i % 100 == 0) {
+                        runOnUiThread { pd.setMessage("$i / $max") }
+                        if (!coroutineContext.isActive) {
+                            db.cancelTransaction()
+                            db.close()
+                            os.close()
+                            return@launch
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.i(TAG, "exportToFile - error", e)
+                runOnUiThread { Toast.makeText(sa, getString(R.string.export_error, e.message), Toast.LENGTH_LONG).show() }
+            }
+            db.endTransaction()
+            os.close()
+            db.close()
+            runOnUiThread { Toast.makeText(sa, R.string.export_done, Toast.LENGTH_LONG).show() }
+            pd.dismiss()
+        }
     }
 
+    @Suppress("DEPRECATION") // requestSingleUpdate is deprecated, but there is no replacement for api < 30
     private fun onClickScan() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
             && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
         )
             return // should not happen, permissions are requested on start
+
         // request location, because backendService may not be running
         val lm = applicationContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        val ll = object : LocationListener {
-            override fun onLocationChanged(loc: Location?) {}
-            override fun onStatusChanged(p0: String?, p1: Int, p2: Bundle?) {}
-            override fun onProviderEnabled(p0: String?) {}
-            override fun onProviderDisabled(p0: String?) {}
-        }
-        val t = HandlerThread("just need it so location can be requested")
-        t.start()
-        val l = t.looper
-        lm.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, ll, l)
+//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) // todo: enable this once API is upgraded
+//            lm.getCurrentLocation(LocationManager.NETWORK_PROVIDER, null, {  }, {  })
+//        else
+            lm.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, null, null)
+
         try {
             runBlocking { withTimeout(3500) {
                 while (BackendService.instance == null) { delay(100) }
@@ -341,9 +431,9 @@ class SettingsActivity : PreferenceActivity() {
         } catch (e: CancellationException) {
             Toast.makeText(this, R.string.show_scan_start_failed, Toast.LENGTH_LONG).show()
         }
-        t.quit()
     }
 
+    @SuppressLint("SetTextI18n") // we want to concatenate the text string, requiring resource strings for ids doesn't make sense
     fun showEmitters(emitters: Collection<RfEmitter>) = runOnUiThread {
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         var d: AlertDialog? = null
@@ -401,15 +491,7 @@ class SettingsActivity : PreferenceActivity() {
             .setView(ScrollView(this).apply { addView(layout) })
             .setPositiveButton(android.R.string.ok, null)
             .create()
-        d?.show()
-    }
-
-    private fun onClickClear() {
-        // todo: confirmation dialog
-        //  and close backend service
-        //  but why actually? it's basically the same thing as clearing app data
-        BackendService.instance?.onClose()
-        this.deleteDatabase(Database.NAME)
+        d.show()
     }
 
 }
