@@ -16,7 +16,7 @@ This backend uses no network data. All data acquired by the phone stays on the p
 Modified version
 ================
 This version has several changes compared to *Déjà Vu*, see the [changelog](CHANGELOG.md) starting at 1.2.0-beta.
-Local NLP Backend is capable of using and importing any database used in *Déjà Vu*.
+Local NLP Backend is capable of using and importing any database used in *Déjà Vu*, but be aware that you need root privileges to extract the database.
 
 Potential future improvements:
 * Improve method for determining which emitters to discard in case of conflicting position report
