@@ -330,7 +330,7 @@ class BackendService : LocationBackendService() {
         if (currentProcessTime < nextMobileScanTime || mobileJob.isActive) {
             if (DEBUG) Log.d(TAG, "startMobileScan() - need to wait before starting next scan")
             if (currentProcessTime > nextWlanScanTime + 60000) {
-                Log.w(TAG, "startMobileScan() - previous mobile scan still not done, killing aüü to stop it")
+                Log.w(TAG, "startMobileScan() - previous mobile scan still not done, killing app to stop it")
                 // todo: if this works, it should also be done/checked onClose()
                 exitProcess(0)
             }
