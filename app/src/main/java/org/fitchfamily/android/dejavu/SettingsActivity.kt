@@ -22,12 +22,15 @@ package org.fitchfamily.android.dejavu
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.app.ProgressDialog
+import android.app.ProgressDialog // deprecated, but replacement is annoying to handle...
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
+import android.graphics.Color
+import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
@@ -103,9 +106,8 @@ class SettingsActivity : PreferenceActivity() {
     }
 
     private fun onClickImport() {
-        val intent = Intent(Intent.ACTION_GET_CONTENT).apply { // any real difference to ACTION_OPEN_DOCUMENT?
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
-            // maybe extra_local_only
             type = "*/*"
         }
         startActivityForResult(intent, IMPORT_CODE)
@@ -347,7 +349,7 @@ class SettingsActivity : PreferenceActivity() {
                 "GSM" -> "GSM/${splitLine[1]}/${splitLine[2]}/${splitLine[3]}/${splitLine[4]}" // GSM,202,0,42,26363 -> GSM/202/0/42/26363
                 "UMTS" -> "WCDMA/${splitLine[1]}/${splitLine[2]}/${splitLine[3]}/${splitLine[4]}" // UMTS,202,0,6060,4655229 -> WCDMA/202/0/6060/4655229
                 "LTE" -> {
-                    if (splitLine[5].isEmpty()) return null // why is this the case so often?
+                    if (splitLine[5].isEmpty()) return null // why is this the case so often? do some phones not report it (properly)?
                     "LTE/${splitLine[1]}/${splitLine[2]}/${splitLine[4]}/${splitLine[5]}/${splitLine[3]}" //LTE,202,1,3126,35714457,20 -> LTE/202/1/35714457/20/3126
                 }
                 else -> ""
@@ -356,7 +358,7 @@ class SettingsActivity : PreferenceActivity() {
 
         } else if (readFormat == 4 && splitLine.size != 7) {
             // we have one or more comma in ssid, rare enough to not optimize anything
-            splitLine = splitLine.subList(0, 6) + splitLine.subList(6, splitLine.size).joinToString(",") // careful, endIndex is exclusive!
+            splitLine = splitLine.subList(0, 6) + splitLine.subList(6, splitLine.size).joinToString(",") // careful, subList endIndex is exclusive!
         }
         return splitLine
     }
@@ -381,7 +383,7 @@ class SettingsActivity : PreferenceActivity() {
                 os.write("database v4\n")
                 os.write("${COL_RFID},${COL_TYPE},${COL_LAT},${COL_LON},${COL_RAD_NS},${COL_RAD_EW},${COL_NOTE}\n")
                 db.beginTransaction()
-                // 90s for exporting 300k emitters / 30 MB -> not great, but ok
+
                 var i = 0
                 db.getAll().forEach {
                     os.write("${it.uniqueId},${it.type},${it.lat},${it.lon},${it.radiusNS},${it.radiusEW},${it.note}\n")
@@ -408,7 +410,7 @@ class SettingsActivity : PreferenceActivity() {
         }
     }
 
-    @Suppress("DEPRECATION") // requestSingleUpdate is deprecated, but there is no replacement for api < 30
+//    @Suppress("DEPRECATION") // requestSingleUpdate is deprecated, but there is no replacement for api < 30
     private fun onClickScan() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
             && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
@@ -420,7 +422,14 @@ class SettingsActivity : PreferenceActivity() {
 //        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) // todo: enable this once API is upgraded
 //            lm.getCurrentLocation(LocationManager.NETWORK_PROVIDER, null, {  }, {  })
 //        else
-            lm.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, null, null)
+//            lm.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, { }, null)
+        val l = object : LocationListener {
+            override fun onLocationChanged(p0: Location?) {}
+            override fun onStatusChanged(p0: String?, p1: Int, p2: Bundle?) {}
+            override fun onProviderEnabled(p0: String?) {}
+            override fun onProviderDisabled(p0: String?) {}
+        }
+        lm.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, l, null)
 
         try {
             runBlocking { withTimeout(3500) {
@@ -460,6 +469,7 @@ class SettingsActivity : PreferenceActivity() {
                     .show()
             }
             val b = Button(this).apply {
+                setBackgroundColor(Color.TRANSPARENT)
                 if (emitterInDb) setBackgroundResource(android.R.drawable.ic_delete)
                 isEnabled = emitterInDb
             }
