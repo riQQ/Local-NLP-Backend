@@ -36,7 +36,6 @@ import android.util.Log
 import kotlinx.coroutines.*
 import org.microg.nlp.api.LocationBackendService
 import org.microg.nlp.api.MPermissionHelperActivity
-import kotlin.math.cos
 import kotlin.system.exitProcess
 
 /**
@@ -205,7 +204,6 @@ class BackendService : LocationBackendService() {
      * @return Always null.
      */
     public override fun update(): Location? {
-        //Log.d(TAG, "update() entry.");
         if (permissionsOkay) {
             if (DEBUG) Log.d(TAG, "update() - NLP asking for location")
             scanAllSensors()
@@ -265,7 +263,7 @@ class BackendService : LocationBackendService() {
                 lastGpsOfThisPeriod = update
             scanAllSensors()
         } else
-            Log.d(TAG, "onGpsChanged() - Permissions not granted, soft fail.")
+            Log.d(TAG, "onGpsChanged() - Permissions not granted or location invalid, soft fail.")
     }
 
     /**
@@ -302,17 +300,15 @@ class BackendService : LocationBackendService() {
             return false
         }
         // in case wifi scan doesn't return anything for a long time we simply allow starting another one
-        if (!wifiScanInProgress || currentProcessTime > nextWlanScanTime + 2 * WLAN_SCAN_INTERVAL) {
-            if (wifiScanEnabled) {
-                if (DEBUG) Log.d(TAG, "startWiFiScan() - Starting WiFi collection.")
-                nextWlanScanTime = currentProcessTime + WLAN_SCAN_INTERVAL
-                wifiScanInProgress = true
-                // launch in background, because this can (rarely) take weirdly long for some reason,
-                // and we don't want this blocking anything
-                scope.launch(Dispatchers.IO) { wifiManager.startScan() }
-                return true
-            } else if (DEBUG) Log.d(TAG, "startWiFiScan() - WiFi scan is disabled.")
-        } else if (DEBUG) Log.d(TAG, "startWiFiScan() - WiFi scan in progress, not starting.")
+        if (wifiScanEnabled && (!wifiScanInProgress || currentProcessTime > nextWlanScanTime + 2 * WLAN_SCAN_INTERVAL)) {
+            if (DEBUG) Log.d(TAG, "startWiFiScan() - Starting WiFi collection.")
+            nextWlanScanTime = currentProcessTime + WLAN_SCAN_INTERVAL
+            wifiScanInProgress = true
+            // launch in background, because this can (rarely) take weirdly long for some reason,
+            // and we don't want this blocking anything
+            scope.launch(Dispatchers.IO) { wifiManager.startScan() }
+            return true
+        } else if (DEBUG) Log.d(TAG, "startWiFiScan() - WiFi scan in progress or disabled, not starting.")
         return false
     }
 
@@ -322,6 +318,10 @@ class BackendService : LocationBackendService() {
      */
     @Synchronized
     private fun startMobileScan(): Boolean {
+        if (!mobileScanEnabled) {
+            if (DEBUG) Log.d(TAG,"startMobileScan() - mobile scan disabled.")
+            return false
+        }
         // Throttle scanning for mobile towers. Generally each tower covers a significant amount
         // of terrain so even if we are moving fairly rapidly we should remain in a single tower's
         // coverage area for several seconds. No need to sample more often than that and we save
@@ -329,21 +329,18 @@ class BackendService : LocationBackendService() {
         val currentProcessTime = SystemClock.elapsedRealtime()
         if (currentProcessTime < nextMobileScanTime || mobileJob.isActive) {
             if (DEBUG) Log.d(TAG, "startMobileScan() - need to wait before starting next scan")
-            if (currentProcessTime > nextWlanScanTime + 60000) {
+            if (currentProcessTime > nextMobileScanTime + 60000) {
                 Log.w(TAG, "startMobileScan() - previous mobile scan still not done, killing app to stop it")
                 // todo: if this works, it should also be done/checked onClose()
+                //  but didn't yet trigger, so I don't even know whether LocalNLP restart after this
                 exitProcess(0)
             }
             return false
         }
         nextMobileScanTime = currentProcessTime + MOBILE_SCAN_INTERVAL
 
-        if (mobileScanEnabled) {
-//            if (DEBUG) Log.d(TAG,"startMobileScan() - Starting mobile signal scan.") better log in other thread
-            mobileJob = scope.launch { scanMobile() }
-            return true
-        } else if (DEBUG) Log.d(TAG,"startMobileScan() - mobile scan disabled.")
-        return false
+        mobileJob = scope.launch { scanMobile() }
+        return true
     }
 
     /**
@@ -376,8 +373,11 @@ class BackendService : LocationBackendService() {
 
         // Try recent API to get all cell information, or fall back to deprecated method
         val allCells: List<CellInfo> = try {
-            // TODO: does this work/help?
-            //  not everything can be made interruptible with this
+            // There is some issue on one of the phones used for testing:
+            // If phone is using LTE, telephonyManager.allCellInfo never returns and keeps the
+            // device awake forever.
+            // This withTimeout / runInterruptible an attempt of stopping this from happening.
+            // TODO: does this work/help? not conclusive so far
             withTimeout(10000) { runInterruptible {
                 telephonyManager!!.allCellInfo ?: emptyList()
             }}
@@ -385,23 +385,20 @@ class BackendService : LocationBackendService() {
             Log.i(TAG, "getMobileTowers(): getMobileTowers timed out and got cancelled.")
             emptyList()
         } catch (e: NoSuchMethodError) {
-            Log.d(TAG, "getMobileTowers(): no such method: getAllCellInfo().");
+            Log.d(TAG, "getMobileTowers(): no such method: getAllCellInfo().")
             emptyList()
         }
         if (allCells.isEmpty()) return deprecatedGetMobileTowers()
 
         val fallbackMnc by lazy {
             val m = telephonyManager!!.networkOperator?.let { if (it.length > 4) it.substring(3) else null }?.toIntOrNull()
-            Log.d(TAG, "getMobileTowers(): using fallback mnc $m") // this triggers quite often... because some results are double with on having broken mnc
+            Log.d(TAG, "getMobileTowers(): using fallback mnc $m") // this triggers quite often... because some results are double with one having invalid mnc
             m
         }
         if (DEBUG) Log.d(TAG, "getMobileTowers(): getAllCellInfo() returned " + allCells.size + " records.")
         val uptimeNanos = System.nanoTime()
         val realtimeNanos = SystemClock.elapsedRealtimeNanos()
         for (info in allCells) {
-            // todo: id.earfcn / arfcn added in api24, can be mapped to frequency and could help with range estimation
-            //  https://www.cablefree.net/wirelesstechnology/4glte/lte-carrier-frequency-earfcn/
-            //  https://en.wikipedia.org/wiki/Absolute_radio-frequency_channel_number
             if (DEBUG) Log.v(TAG, "getMobileTowers(): inputCellInfo: $info")
             val idStr: String
             val asu: Int
@@ -512,6 +509,7 @@ class BackendService : LocationBackendService() {
      * @return A set of observations for all the towers Android is reporting.
      */
     @SuppressLint("MissingPermission")
+    // todo: remove after api upgrade, and integrate the first part in getMobileTowers
     private fun deprecatedGetMobileTowers(): HashSet<Observation> {
         if (DEBUG) Log.d(TAG, "getMobileTowers(): allCells null or empty, using deprecated")
         val observations = hashSetOf<Observation>()
@@ -637,13 +635,13 @@ class BackendService : LocationBackendService() {
         // we don't want to update emitters using outdated locations
         val loc = if (useKalman) {
             // Make accuracy better if using kalman. In tests it appears to hit some limit at
-            // ca 8.4 m, not sure why (with GPS accuracy being 4 m at the same time).
+            // ca 8.4 m, not sure why (with GPS accuracy always being ~4.5 m at the same time).
             // With this limit, detection of 5 GHz WiFi is impossible (requires 7 m)...
             // thus we use a hacky workaround: just improve kalman accuracy by 1.5 m
             kalmanGpsLocation?.takeIf { it.timeOfUpdate > oldKalmanUpdate }?.location?.apply { accuracy -= 1.5f }
         } else
             lastGpsOfThisPeriod
-        updateEmitters(emitters, loc?.takeIf { notNullIsland(it) })
+        updateEmitters(emitters, loc)
 
         yield() // check if job is canceled, so we don't start a processing period after onClose
         startProcessingPeriodIfNecessary()
@@ -681,7 +679,7 @@ class BackendService : LocationBackendService() {
             mobileJob.join()
             wifiJob.join()
             backgroundJob.join()
-            scope.launch(Dispatchers.Default) { endOfPeriodProcessing() } // default because mostly processing
+            scope.launch(Dispatchers.Default) { endOfPeriodProcessing() }
         }
     }
 
@@ -731,7 +729,7 @@ class BackendService : LocationBackendService() {
             else -> culledEmitters(locations)?.weightedAverage()
         }
         if (weightedAverageLocation != null && notNullIsland(weightedAverageLocation)) {
-            if (DEBUG) { // TODO: remove, this is just for testing now
+/*            if (DEBUG) { // this is just for testing / comparing the different locations
                 // lat positive: alternative puts me further south
                 // lon positive: alternative puts me further west
                 val weightedNoCull = locations.weightedAverage()
@@ -744,7 +742,7 @@ class BackendService : LocationBackendService() {
                 Log.v(TAG, "avg (${weightedAverageLocation.accuracy}) minus medianCull loc (${medianCull?.accuracy}) / ${medianCullEmitters?.size}: lat ${(weightedAverageLocation.latitude - (medianCull?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (medianCull?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
                 val newThing = locations.medianCullSafe()
                 Log.v(TAG, "avg (${weightedAverageLocation.accuracy}) minus medianCullSafe loc (${newThing?.accuracy}): lat ${(weightedAverageLocation.latitude - (newThing?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (newThing?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
-            }
+            }*/
             if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - reporting location")
             // for some weird reason, reporting may (very rarely) take REALLY long, even minutes
             // this may be an issue of unifiedNLP instead of dejavu... anyway, do it in background!

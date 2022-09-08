@@ -1,0 +1,3 @@
+- fix crash when showing nearby emitters
+- slightly less ugly buttons when showing nearby emitters
+
