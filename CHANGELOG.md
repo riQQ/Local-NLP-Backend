@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Removed
 - Not applicable
 
+## [1.2.0-beta.4] - 2022-09-??
+### Added
+- Not applicable
+
+### Changed
+- Fix database import from content URI
+
+### Removed
+- Not applicable
+
 ## [1.2.0-beta.3] - 2022-09-08
 ### Changed
 - fix crash when showing nearby emitters

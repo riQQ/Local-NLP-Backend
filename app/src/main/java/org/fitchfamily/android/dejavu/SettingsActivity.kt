@@ -37,6 +37,7 @@ import android.os.Build
 import android.os.Bundle
 import android.preference.PreferenceActivity
 import android.preference.PreferenceManager
+import android.provider.OpenableColumns
 import android.util.Log
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
@@ -269,10 +270,25 @@ class SettingsActivity : PreferenceActivity() {
 
         fun import(collision: Int) {
             BackendService.instance?.onClose()
-            if (uri.toString().endsWith(".db")) {
+            val isDatabaseFile = if (uri.toString().startsWith("file:")) {
+                uri.toString().endsWith(".db")
+            } else {
+                var db = false
+                contentResolver.query(uri, null, null, null, null).use {
+                    if (it != null && it.moveToFirst()) {
+                        val idx = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (idx >= 0)
+                            db = it.getString(idx).endsWith(".db")
+                    }
+                }
+                db
+            }
+            if (isDatabaseFile) {
                 readFromDatabase(collision)
                 return
             }
+
+            // no database, check whether it's an export or a MLS file
             val firstLine = reader.readLine()
             val readFormat = when {
                 firstLine == MLS -> 0
