@@ -8,10 +8,8 @@ The other part is the actual location provider which uses the database to estima
 
 This backend uses no network data. All data acquired by the phone stays on the phone.
 
-<!--
 <a href="https://f-droid.org/packages/org.fitchfamily.android.dejavu/" target="_blank">
 <img src="https://f-droid.org/badge/get-it-on.png" alt="Get it on F-Droid" height="90"/></a>
--->
 
 Modified version
 ================
