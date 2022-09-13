@@ -1,0 +1,1 @@
+- Fix database import from content URI. Now import should work on all devices.

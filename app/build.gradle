@@ -10,8 +10,8 @@ android {
         // problem2: support for 5G and 6 GHz WiFi is added in higher APIs
         // -> first release non-beta version with old API, then upgrade
         targetSdkVersion 28
-        versionCode 25
-        versionName "1.2.0-beta.3"
+        versionCode 26
+        versionName "1.2.0-beta.4"
 //        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
     buildTypes {
