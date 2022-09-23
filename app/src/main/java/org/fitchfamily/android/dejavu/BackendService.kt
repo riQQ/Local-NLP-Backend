@@ -327,16 +327,12 @@ class BackendService : LocationBackendService() {
         // coverage area for several seconds. No need to sample more often than that and we save
         // resources on the phone.
         val currentProcessTime = SystemClock.elapsedRealtime()
-        if (currentProcessTime < nextMobileScanTime || mobileJob.isActive) {
+        if (currentProcessTime < nextMobileScanTime || (mobileJob.isActive && currentProcessTime < nextMobileScanTime + 60000)) {
             if (DEBUG) Log.d(TAG, "startMobileScan() - need to wait before starting next scan")
-            if (currentProcessTime > nextMobileScanTime + 60000) {
-                Log.w(TAG, "startMobileScan() - previous mobile scan still not done, killing app to stop it")
-                // todo: if this works, it should also be done/checked onClose()
-                //  but didn't yet trigger, so I don't even know whether LocalNLP restart after this
-                exitProcess(0)
-            }
             return false
         }
+        if (mobileJob.isActive)
+            Log.w(TAG, "startMobileScan() - starting new scan while old scan job is active: something may be wrong")
         nextMobileScanTime = currentProcessTime + MOBILE_SCAN_INTERVAL
 
         mobileJob = scope.launch { scanMobile() }
@@ -373,17 +369,7 @@ class BackendService : LocationBackendService() {
 
         // Try recent API to get all cell information, or fall back to deprecated method
         val allCells: List<CellInfo> = try {
-            // There is some issue on one of the phones used for testing:
-            // If phone is using LTE, telephonyManager.allCellInfo never returns and keeps the
-            // device awake forever.
-            // This withTimeout / runInterruptible an attempt of stopping this from happening.
-            // TODO: does this work/help? not conclusive so far
-            withTimeout(10000) { runInterruptible {
                 telephonyManager!!.allCellInfo ?: emptyList()
-            }}
-        } catch (e: CancellationException) {
-            Log.i(TAG, "getMobileTowers(): getMobileTowers timed out and got cancelled.")
-            emptyList()
         } catch (e: NoSuchMethodError) {
             Log.d(TAG, "getMobileTowers(): no such method: getAllCellInfo().")
             emptyList()
