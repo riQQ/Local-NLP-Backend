@@ -424,7 +424,8 @@ private val blacklistEndsWith = hashSetOf(
 )
 private val blacklistEquals = hashSetOf(
     "amtrak", "amtrakconnect", "cdwifi", "megabus", "westlan","wifi in de trein",
-    "svciob", "oebb", "oebb-postbus", "dpmbfree", "telekom_ice", "db ic bus", // transport
+    "svciob", "oebb", "oebb-postbus", "dpmbfree", "telekom_ice", "db ic bus",
+    "gkbguest", // transport
 )
 
 enum class EmitterStatus {

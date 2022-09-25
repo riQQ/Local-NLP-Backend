@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Removed
 - Not applicable
 
+## [1.2.0] - 2022-09-25
+### Changed
+- Update blacklist.
+
 ## [1.2.0-beta.4] - 2022-09-13
 ### Changed
 - Fix database import from content URI. Now import should work on all devices.
