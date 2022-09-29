@@ -375,7 +375,7 @@ private const val TAG = "LocalNLP RfEmitter"
 private val splitRegex = "[^a-z]".toRegex() // for splitting SSID into "words"
 // use hashSets for fast blacklist*.contains() check
 private val blacklistWords = hashSetOf(
-    "android", "ipad", "phone", "motorola", "huawei", "iphone", // mobile tethering
+    "android", "ipad", "iphone", "phone", "motorola", "huawei", // mobile tethering
     "mobile", // sounds like name for mobile hotspot
     "deinbus", "ecolines", "eurolines", "fernbus", "flixbus", "muenchenlinie",
     "postbus", "skanetrafiken", "oresundstag", "regiojet", // transport
@@ -388,6 +388,9 @@ private val blacklistWords = hashSetOf(
     "silverado", // GMC Silverado. "Bryces Silverado" seen, maybe move to startsWith?
     "myvolvo", // Volvo in car WiFi, maybe move to startsWith?
     "bmw", // examples: BMW98303 CarPlay, My BMW Hotspot 8303, DIRECT-BMW 67727
+    "skoda", // My Skoda 3358, Skoda_WLAN_5790
+    "seat", // My SEAT 741, SEAT_WLAN
+    "vw", // VW WLAN 9266, VW_WLAN, My VW 4025
 )
 private val blacklistStartsWith = hashSetOf(
     "moto ", "samsung galaxy", "lg aristo", "androidap", // mobile tethering
@@ -400,16 +403,11 @@ private val blacklistStartsWith = hashSetOf(
     "wifi hotspot ", // Default GM vehicle WiFi name
 
     // Per instructional video on YouTube, Mercedes cars have and SSID of
-    // "MB WLAN nnnnn" where nnnnn is a 5 digit number, same for MB Hostspot
-    "mb wlan ", "mb hotspot",
+    // "MB WLAN nnnnn" where nnnnn is a 5 digit number, same for MB Hostspot and direct-mb hotspot
+    "mb wlan ", "mb hotspot", "direct-mb hotspot",
     "westbahn ", "buswifi", "coachamerica", "disneylandresortexpress",
     "taxilinq", "transitwirelesswifi", // transport, maybe move some to words?
-    "yicarcam", // Dashcam WiFi.
-    "my seat", // My SEAT 741
-    "vw wlan", // VW WLAN 9266
-    "my vw", // My VW 4025
-    "my skoda", // My Skoda 3358
-    "skoda_wlan", // Skoda_WLAN_5790
+    "yicarcam", // Dashcam WiFi
 )
 private val blacklistEndsWith = hashSetOf(
     "corvette", // Chevy Corvette. "TS Corvette" seen.
@@ -425,7 +423,7 @@ private val blacklistEndsWith = hashSetOf(
 private val blacklistEquals = hashSetOf(
     "amtrak", "amtrakconnect", "cdwifi", "megabus", "westlan","wifi in de trein",
     "svciob", "oebb", "oebb-postbus", "dpmbfree", "telekom_ice", "db ic bus",
-    "gkbguest", // transport
+    "gkbgast", // transport
 )
 
 enum class EmitterStatus {
