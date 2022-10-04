@@ -57,6 +57,7 @@ Current setting: %s
     <string name="show_scan_details_emitter_radius_ns">Width north-south: %.2f m</string>
     <string name="show_scan_details_emitter_blacklisted">This emitter is blacklisted</string>
     <string name="show_scan_details_emitter_not_in_db">This emitter is not in the database</string>
+    <string name="show_scan_details_emitter_blacklist">Blacklist this emitter</string>
     <string name="show_scan_emitter_delete">Delete emitter %s?</string>
     <string name="show_scan_emitter_delete_confirm">Delete</string>
 

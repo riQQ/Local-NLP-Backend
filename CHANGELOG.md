@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Removed
 - Not applicable
 
+## [1.2.1] - 2022-10-xx
+### Added
+- Manually blacklist emitter when showing nearby emitters.
+
+### Changed
+- Update blacklist.
+
 ## [1.2.0] - 2022-09-25
 ### Changed
 - Update blacklist.

@@ -478,11 +478,19 @@ class SettingsActivity : PreferenceActivity() {
                     if (emitter.status == EmitterStatus.STATUS_BLACKLISTED) getString(R.string.show_scan_details_emitter_blacklisted) else null,
                     if (!emitterInDb) getString(R.string.show_scan_details_emitter_not_in_db) else null,
                 ).joinToString("\n")
-                AlertDialog.Builder(this)
+                val b = AlertDialog.Builder(this)
                     .setTitle(getString(R.string.show_scan_details_emitter, emitter.uniqueId))
                     .setMessage(text)
                     .setPositiveButton(android.R.string.ok, null)
-                    .show()
+                if (emitterInDb && emitter.status != EmitterStatus.STATUS_BLACKLISTED)
+                    b.setNegativeButton(R.string.show_scan_details_emitter_blacklist) { _, _ ->
+                        val db = Database(this)
+                        db.setInvalid(emitter)
+                        BackendService.resetCache()
+                        db.close()
+                        d?.dismiss()
+                    }
+                b.show()
             }
             val b = Button(this).apply {
                 setBackgroundColor(Color.TRANSPARENT)
@@ -494,9 +502,8 @@ class SettingsActivity : PreferenceActivity() {
                     .setTitle(getString(R.string.show_scan_emitter_delete, emitter.uniqueId))
                     .setPositiveButton(R.string.show_scan_emitter_delete_confirm) { _, _ ->
                         val db = Database(this)
-                        db.beginTransaction()
                         db.drop(emitter)
-                        db.endTransaction()
+                        BackendService.resetCache()
                         db.close()
                         d?.dismiss()
                     }

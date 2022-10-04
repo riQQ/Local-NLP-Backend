@@ -120,7 +120,7 @@ internal class Cache(context: Context?) {
     /**
      * Remove all entries from the cache.
      */
-    private fun clear() {
+    fun clear() {
         synchronized(this) {
             workingSet.clear()
             if (DEBUG) Log.d(TAG, "clear() - entry")

@@ -779,6 +779,9 @@ class BackendService : LocationBackendService() {
             instance?.onGpsChanged(locReport)
         }
 
+        /** Clears the emitter cache. Necessary if changes to database were made no through cache */
+        fun resetCache() = instance?.emitterCache?.clear()
+
         private lateinit var prefs: SharedPreferences
 
         /**
