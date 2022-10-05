@@ -8,7 +8,6 @@
     <string name="export_jb">Export is only supported on KitKat and above</string>
     <string name="export_canceled">Export canceled</string>
     <string name="export_title">Exporting…</string>
-    <string name="export_message">This may take a few minutes, please wait.</string>
     <string name="export_done">Export finished</string>
     <string name="export_error">Error while exporting: %s</string>
     <string name="pref_kalman_title">Use Kalman filter for GPS location</string>
@@ -17,6 +16,10 @@
     <string name="pref_use_cell_summary">When disabled, scans for cell towers will not happen</string>
     <string name="pref_use_wlan_title">Use WiFi locations</string>
     <string name="pref_use_wlan_summary">When disabled, WiFi scans will not happen</string>
+    <string name="pref_active_mode_title">Active mode</string>
+    <string name="pref_active_mode_summary">Enables GPS when emitters were found, but no location could be determined</string>
+    <string name="pref_active_time_title">Active mode GPS timeout</string>
+    <string name="active_mode_active">Active mode: GPS on</string>
     <string name="pref_show_emitters_title">Show nearby emitters</string>
     <string name="pref_show_emitters_summary">Scans for emitters and displays result with additional information</string>
     <string name="pref_cull_title">Discard bad emitters</string>

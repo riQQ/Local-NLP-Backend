@@ -33,10 +33,10 @@ import android.preference.PreferenceManager
 import android.telephony.*
 import android.telephony.gsm.GsmCellLocation
 import android.util.Log
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import kotlinx.coroutines.*
 import org.microg.nlp.api.LocationBackendService
 import org.microg.nlp.api.MPermissionHelperActivity
-import kotlin.system.exitProcess
 
 /**
  * Created by tfitch on 8/27/17.
@@ -93,12 +93,17 @@ class BackendService : LocationBackendService() {
     @Volatile private var oldKalmanUpdate = 0L
     /** set to null at the end of each period, used if kalman is switched off */
     @Volatile private var lastGpsOfThisPeriod: Location? = null
+    // for calling GpsMonitor
+    private val localBroadcastManager by lazy { LocalBroadcastManager.getInstance(this) }
 
-    // settings that are read often, so better "copy" them here
+    // settings that are read often, so better copy them here
+    // setting changes propagate here because settingsFragment closes BackendService, and thus it's re-opened
     private var useKalman = false
     private var wifiScanEnabled = true
     private var mobileScanEnabled = true
     private var cull = 0
+    private var activeMode = false
+    private var activeTimeout = 0L
 
     var settingsActivity: SettingsActivity? = null // crappy way for forwarding scan results
 
@@ -132,6 +137,8 @@ class BackendService : LocationBackendService() {
         wifiScanEnabled = prefs.getBoolean(PREF_WIFI, true)
         mobileScanEnabled = prefs.getBoolean(PREF_MOBILE, true)
         cull = prefs.getInt(PREF_CULL, 0)
+        activeMode = prefs.getBoolean(PREF_ACTIVE_MODE, false)
+        activeTimeout = (prefs.getString(PREF_ACTIVE_TIME, "10")?.toLongOrNull() ?: 10L) * 1000
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             // Check our needed permissions, don't run unless we can.
@@ -692,6 +699,25 @@ class BackendService : LocationBackendService() {
                 return
             }
             locations = getRfLocations(seenSet)
+
+            // set values required for activeMode
+            if (activeMode && locations.isEmpty() && seenSet.isNotEmpty()) {
+                // Remove blacklisted emitters. They don't lead to a location, so we might not need to start GPS.
+                val emittersToUse = seenSet.filterNot { emitterCache?.simpleGet(it)?.status == EmitterStatus.STATUS_BLACKLISTED }
+                if (emittersToUse.isNotEmpty()) { // start GPS if necessary, means we're in activeMode
+                    val (shortRange, longRange) = emittersToUse.partition { it.rfType in shortRangeEmitterTypes }
+                    val requiredAccuracyForGps = if (shortRange.isEmpty())
+                            longRange.minOf { it.rfType.getRfCharacteristics().minimumRange }
+                        else
+                            shortRange.maxOf { it.rfType.getRfCharacteristics().minimumRange }
+                    val intent = Intent(this, GpsMonitor::class.java)
+                    intent.putExtra(ACTIVE_MODE_TIME, activeTimeout)
+                    intent.putExtra(ACTIVE_MODE_ACCURACY, requiredAccuracyForGps.toFloat())
+                    intent.action = ACTIVE_MODE_ACTION
+                    localBroadcastManager.sendBroadcast(intent)
+                }
+            }
+
             seenSet.clear() // Reset the RF emitters we've seen.
 
             // Sync all of our changes to the on flash database in background

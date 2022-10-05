@@ -14,9 +14,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Removed
 - Not applicable
 
-## [1.2.1] - 2022-10-xx
+## [1.2.1] - 2022-10-05
 ### Added
 - Manually blacklist emitter when showing nearby emitters.
+- Active mode: enable GPS when emitters are found, but none has a known location (disabled by default).
 
 ### Changed
 - Update blacklist.

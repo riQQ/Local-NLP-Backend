@@ -20,7 +20,6 @@ Potential future improvements:
 * Improve method for determining which emitters to discard in case of conflicting position report
 * Upgrade to more recent Android API. This means some old method for detecting mobile cells will be removed, and may break cell detection on some old devices.
 * Enable detecting 5G emitters and maybe other types (API upgrade necessary).
-* *Active mode* for automatically enabling GPS to determine position of newly found emitters.
 * Find and fix potential bugs
 
 Requirements on phone
@@ -57,6 +56,7 @@ ACCESS_COARSE_LOCATION|Allows backend to determine which cell towers your phone 
 ACCESS_FINE_LOCATION|Allows backend to determine which WiFis your phone detect and monitor position reports from the GPS.
 CHANGE_WIFI_STATE|Allows backend to scan for nearby WiFis.
 ACCESS_WIFI_STATE|Allows backend to access WiFi scan results.
+FOREGROUND_SERVICE|Needed so GPS can be used in active mode.
 
 Some permissions may not be necessary, this heavily depends on [Android version](https://developer.android.com/guide/topics/connectivity/wifi-scan).
 

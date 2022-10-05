@@ -1,0 +1,3 @@
+- Manually blacklist emitter when showing nearby emitters.
+- Active mode: enable GPS when emitters are found, but none has a known location (disabled by default).
+- Update blacklist.

@@ -10,9 +10,8 @@ android {
         // problem2: support for 5G and 6 GHz WiFi is added in higher APIs
         // -> first release non-beta version with old API, then upgrade
         targetSdkVersion 28
-        versionCode 27
-        versionName "1.2.0"
-//        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        versionCode 28
+        versionName "1.2.1"
     }
     buildTypes {
         release {
@@ -23,6 +22,7 @@ android {
     }
     lintOptions {
         abortOnError false // otherwise targetSdk 28 won't compile
+        disable 'MissingTranslation'
     }
     namespace "org.fitchfamily.android.dejavu"
     archivesBaseName = "local-nlp-backend_" + defaultConfig.versionName

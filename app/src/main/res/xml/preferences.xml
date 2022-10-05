@@ -2,21 +2,31 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:ulogger="http://schemas.android.com/apk/res-auto">
 
-    <CheckBoxPreference
+    <SwitchPreference
         android:key="pref_kalman"
         android:title="@string/pref_kalman_title"
         android:summary="@string/pref_kalman_summary"
         android:defaultValue="false" />
-    <CheckBoxPreference
+    <SwitchPreference
         android:key="pref_use_cell"
         android:title="@string/pref_use_cell_title"
         android:summary="@string/pref_use_cell_summary"
         android:defaultValue="true" />
-    <CheckBoxPreference
+    <SwitchPreference
         android:key="pref_use_wlan"
         android:title="@string/pref_use_wlan_title"
         android:summary="@string/pref_use_wlan_summary"
         android:defaultValue="true" />
+    <SwitchPreference
+        android:key="pref_active_mode"
+        android:title="@string/pref_active_mode_title"
+        android:summary="@string/pref_active_mode_summary"
+        android:defaultValue="false" />
+    <EditTextPreference
+        android:key="pref_active_time"
+        android:title="@string/pref_active_time_title"
+        android:defaultValue="10"
+        android:inputType="number" />
     <Preference
         android:key="pref_cull"
         android:title="@string/pref_cull_title"

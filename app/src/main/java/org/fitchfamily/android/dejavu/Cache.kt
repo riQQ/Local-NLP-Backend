@@ -94,6 +94,9 @@ internal class Cache(context: Context?) {
         }
     }
 
+    /** Simply gets the emitter if it's cached */
+    fun simpleGet(id: RfIdentification): RfEmitter? = workingSet[id.uniqueId]
+
     /**
      * Loads the given RfIdentifications from database
      *
