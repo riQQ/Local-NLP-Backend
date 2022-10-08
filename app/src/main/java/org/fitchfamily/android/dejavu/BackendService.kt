@@ -66,11 +66,11 @@ class BackendService : LocationBackendService() {
             }
         }
     }
-    private val scope = CoroutineScope(Job() + Dispatchers.Default)
+    private val scope = CoroutineScope(Job() + Dispatchers.IO)
     private var mobileJob = scope.launch { }
     private var wifiJob = scope.launch { }
-    private var backgroundJob: Job = scope.launch(Dispatchers.IO) { }
-    private var periodicProcessing: Job = scope.launch(Dispatchers.IO) { }
+    private var backgroundJob: Job = scope.launch { }
+    private var periodicProcessing: Job = scope.launch { }
 
     //
     // Periodic process information.
@@ -313,7 +313,7 @@ class BackendService : LocationBackendService() {
             wifiScanInProgress = true
             // launch in background, because this can (rarely) take weirdly long for some reason,
             // and we don't want this blocking anything
-            scope.launch(Dispatchers.IO) { wifiManager.startScan() }
+            scope.launch { wifiManager.startScan() }
             return true
         } else if (DEBUG) Log.d(TAG, "startWiFiScan() - WiFi scan in progress or disabled, not starting.")
         return false
@@ -589,7 +589,7 @@ class BackendService : LocationBackendService() {
      */
     private fun queueForProcessing(observations: Collection<Observation>) {
         val oldBgJob = backgroundJob
-        backgroundJob = scope.launch(Dispatchers.IO) {
+        backgroundJob = scope.launch {
             oldBgJob.join()
             backgroundProcessing(observations)
         }
@@ -648,7 +648,7 @@ class BackendService : LocationBackendService() {
     private fun startProcessingPeriodIfNecessary() {
         if (periodicProcessing.isActive) return
         if (DEBUG) Log.d(TAG, "startProcessingPeriodIfNecessary() - starting new processing period")
-        periodicProcessing = scope.launch(Dispatchers.IO) { // IO because it's mostly waiting
+        periodicProcessing = scope.launch { // IO because it's mostly waiting
             delay(REPORTING_INTERVAL)
             if (DEBUG) Log.d(TAG, "startProcessingPeriodIfNecessary() - reporting interval over, continue")
             // delay a bit more if wifi scan is still running
@@ -700,21 +700,25 @@ class BackendService : LocationBackendService() {
             }
             locations = getRfLocations(seenSet)
 
-            // set values required for activeMode
+            // start GPS if we found emitters, but none has a valid location
             if (activeMode && locations.isEmpty() && seenSet.isNotEmpty()) {
                 // Remove blacklisted emitters. They don't lead to a location, so we might not need to start GPS.
                 val emittersToUse = seenSet.filterNot { emitterCache?.simpleGet(it)?.status == EmitterStatus.STATUS_BLACKLISTED }
-                if (emittersToUse.isNotEmpty()) { // start GPS if necessary, means we're in activeMode
+                if (emittersToUse.isNotEmpty()) {
+                    // determine accuracy values required to actually put the emitter into the database
                     val (shortRange, longRange) = emittersToUse.partition { it.rfType in shortRangeEmitterTypes }
                     val requiredAccuracyForGps = if (shortRange.isEmpty())
+                            // ideally we want to locate all long range emitters
                             longRange.minOf { it.rfType.getRfCharacteristics().minimumRange }
                         else
+                            // but for short range emitters, getting one is enough
+                            // reason: often the 7 m for 5 GHz WiFi take rather long, using more battery
                             shortRange.maxOf { it.rfType.getRfCharacteristics().minimumRange }
                     val intent = Intent(this, GpsMonitor::class.java)
                     intent.putExtra(ACTIVE_MODE_TIME, activeTimeout)
                     intent.putExtra(ACTIVE_MODE_ACCURACY, requiredAccuracyForGps.toFloat())
                     intent.action = ACTIVE_MODE_ACTION
-                    localBroadcastManager.sendBroadcast(intent)
+                    localBroadcastManager.sendBroadcast(intent) // tell GpsMonitor to start GPS
                 }
             }
 
@@ -725,7 +729,7 @@ class BackendService : LocationBackendService() {
             if (DEBUG && backgroundJob.isActive)
                 // unexpected, but seen: see startProcessingPeriodIfNecessary for explanation
                 Log.d(TAG, "endOfPeriodProcessing() - background job is active, this is unexpected")
-            backgroundJob = scope.launch(Dispatchers.IO) {
+            backgroundJob = scope.launch {
                 oldBgJob.join()
                 emitterCache!!.sync()
             }
@@ -757,10 +761,9 @@ class BackendService : LocationBackendService() {
             }*/
             if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - reporting location")
             // for some weird reason, reporting may (very rarely) take REALLY long, even minutes
-            // this may be an issue of unifiedNLP instead of dejavu... anyway, do it in background!
-            scope.launch(Dispatchers.IO) { report(weightedAverageLocation) }
-        } else
-            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - no location to report")
+            // this may be an issue of unifiedNLP instead of the backend... anyway, do it in background!
+            scope.launch { report(weightedAverageLocation) }
+        } else if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - no location to report")
     }
 
     /**

@@ -144,6 +144,7 @@ class GpsMonitor : Service(), LocationListener {
 
     override fun onProviderDisabled(provider: String) {
         Log.d(TAG, "onProviderDisabled() - $provider")
+        // todo: apparently this is sometimes seconds after GPS was disabled, anything that can be done here?
         gpsEnabled = locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
     }
 
@@ -152,15 +153,18 @@ class GpsMonitor : Service(), LocationListener {
      * is received or the timeout is over.
      */
     fun getGpsPosition(timeout: Long, accuracy: Float) {
+        if (!gpsEnabled || gpsRunning?.isActive == true) {
+            if (DEBUG) Log.d(TAG, "getGpsPosition() - not starting GPS. GPS provider enabled: $gpsEnabled, GPS running: $gpsRunning")
+            return
+        }
         if (DEBUG) Log.d(TAG, "getGpsPosition() - trying to start for $timeout ms")
-        if (!gpsEnabled || gpsRunning?.isActive == true) return
         try {
             startForeground(NOTIFICATION_ID, notification)
             gpsLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, GPS_SAMPLE_TIME, GPS_SAMPLE_DISTANCE, this)
             gpsRunning = scope.launch(Dispatchers.IO) { gpsTimeout(timeout) }
             targetAccuracy = accuracy
         } catch (ex: SecurityException) {
-            // ignore
+            Log.w(TAG, "getGpsPosition() - starting GPS failed", ex)
         }
     }
 

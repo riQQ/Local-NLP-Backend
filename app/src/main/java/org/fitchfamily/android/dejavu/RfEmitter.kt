@@ -259,8 +259,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
             // position estimate based on it.
             val observation = lastObservation ?: return null
 
-            if (status == EmitterStatus.STATUS_BLACKLISTED)
-                return null
+            if (status == EmitterStatus.STATUS_BLACKLISTED) return null
 
             // If we don't have a coverage estimate we will get back a null location
             val cov = coverage ?: return null
@@ -280,8 +279,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
      * @return True if the emitter is blacklisted (should not be used in position computations).
      */
     private fun isBlacklisted(): Boolean =
-        if (note.isEmpty())
-            false
+        if (note.isEmpty()) false
         else
              when (type) {
                  WLAN2, WLAN5, WLAN6 -> ssidBlacklisted()
@@ -302,7 +300,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
 
         // split lc into continuous occurrences of a-z
         // most 'contains' checks only make sense if the string is a separate word
-        // this accelerates comparison a lot, at the risk of missing some wifis
+        // this accelerates comparison a lot, at the risk of missing some WiFis
         val lcSplit = lc.split(splitRegex).toHashSet()
 
         // Seen a large number of WiFi networks where the SSID is the last
@@ -321,7 +319,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 || lcSplit.contains("moto") && note.startsWith("MOTO") // "MOTO9564" and "MOTO9916" seen
                 || lcSplit.first() == "audi"            // some cars seem to have this AP on-board
                 || lc == macSuffix                      // Apparent default SSID name for many cars
-                // deal with words not achievable with blacklistWords, checking only if lcSplit.contains(<something>)
+                // deal with words not achievable with the blacklist sets, checking only if
+                // lcSplit.contains(<something>) (for performance reasons)
                 || (lcSplit.contains("admin") && lc.contains("admin@ms"))
                 || (lcSplit.contains("guest") && lc.contains("guest@ms"))
                 || (lcSplit.contains("contiki") && lc.contains("contiki-wifi"))    // transport
@@ -392,7 +391,13 @@ private val blacklistWords = hashSetOf(
     "seat", // My SEAT 741, SEAT_WLAN
     "vw", // VW WLAN 9266, VW_WLAN, My VW 4025
 )
-private val blacklistStartsWith = hashSetOf(
+private val blacklistEquals = hashSetOf(
+    "amtrak", "amtrakconnect", "cdwifi", "megabus", "westlan","wifi in de trein",
+    "svciob", "oebb", "oebb-postbus", "dpmbfree", "telekom_ice", "db ic bus",
+    "gkbgast", // transport
+)
+// and arrays if we just want to iterate
+private val blacklistStartsWith = arrayOf(
     "moto ", "samsung galaxy", "lg aristo", "androidap", // mobile tethering
     "cellspot", // T-Mobile US portable cell based WiFi
     "verizon", // Verizon mobile hotspot
@@ -409,7 +414,7 @@ private val blacklistStartsWith = hashSetOf(
     "taxilinq", "transitwirelesswifi", // transport, maybe move some to words?
     "yicarcam", // Dashcam WiFi
 )
-private val blacklistEndsWith = hashSetOf(
+private val blacklistEndsWith = arrayOf(
     "corvette", // Chevy Corvette. "TS Corvette" seen.
 
     // General Motors built vehicles SSID can be changed but the recommended SSID to
@@ -419,11 +424,6 @@ private val blacklistEndsWith = hashSetOf(
     "terrain", // GMC Terrain. "Nelson Terrain" seen
     "sierra", // GMC pickup. "dees sierra" seen
     "gmc wifi", // General Motors
-)
-private val blacklistEquals = hashSetOf(
-    "amtrak", "amtrakconnect", "cdwifi", "megabus", "westlan","wifi in de trein",
-    "svciob", "oebb", "oebb-postbus", "dpmbfree", "telekom_ice", "db ic bus",
-    "gkbgast", // transport
 )
 
 enum class EmitterStatus {
