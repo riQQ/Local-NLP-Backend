@@ -118,7 +118,8 @@ class BackendService : LocationBackendService() {
         nextWlanScanTime = 0
         wifiBroadcastReceiverRegistered = false
         wifiScanInProgress = false
-        if (emitterCache == null) emitterCache = Cache(this)
+        if (emitterCache == null)
+            emitterCache = Cache(this)
         permissionsOkay = true
         prefs = PreferenceManager.getDefaultSharedPreferences(this)
         if (prefs.getString(PREF_BUILD, "") != Build.FINGERPRINT) {
@@ -280,8 +281,12 @@ class BackendService : LocationBackendService() {
     @Synchronized
     private fun scanAllSensors() {
         if (emitterCache == null) {
-            if (DEBUG) Log.d(TAG, "scanAllSensors() - emitterCache is null?!?")
-            return
+            if (instance == null) { // this should not be necessary, but better make sure
+                if (DEBUG) Log.d(TAG, "scanAllSensors() - instance is null")
+                return
+            }
+            if (DEBUG) Log.d(TAG, "scanAllSensors() - emitterCache is null: creating")
+            emitterCache = Cache(this)
         }
 
         if (DEBUG) Log.d(TAG, "scanAllSensors() - starting scans")
@@ -513,7 +518,14 @@ class BackendService : LocationBackendService() {
         }
         val mcc = mncString.substring(0, 3).toIntOrNull() ?: return observations
         val mnc = mncString.substring(3).toIntOrNull() ?: return observations
-        val info = telephonyManager!!.cellLocation
+        var info: CellLocation? = null
+
+        try {
+            val info = telephonyManager!!.cellLocation
+        } catch (e: Throwable) {
+            if (DEBUG) Log.d(TAG, "getCellLocation(): failed")
+        }
+
         val timeNanos = SystemClock.elapsedRealtimeNanos()
         if (info != null && info is GsmCellLocation) {
             val idStr = "${EmitterType.GSM}/$mcc/$mnc/${info.lac}/${info.cid}"
@@ -603,7 +615,10 @@ class BackendService : LocationBackendService() {
      */
     private suspend fun backgroundProcessing(observations: Collection<Observation>) {
         if (emitterCache == null) {
-            if (instance == null) return // this should not be necessary, but better make sure
+            if (instance == null) { // this should not be necessary, but better make sure
+                if (DEBUG) Log.d(TAG, "backgroundProcessing() - instance is null")
+                return
+            }
             if (DEBUG) Log.d(TAG, "backgroundProcessing() - emitterCache is null: creating")
             emitterCache = Cache(this)
         }
@@ -735,6 +750,7 @@ class BackendService : LocationBackendService() {
             }
         }
 
+        if (locations.isEmpty()) return
         // Estimate location using weighted average of the most recent
         // observations from the set of RF emitters we have seen. We cull
         // the locations based on distance from each other to reduce the
