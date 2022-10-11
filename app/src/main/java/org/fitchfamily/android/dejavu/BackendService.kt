@@ -31,6 +31,7 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.preference.PreferenceManager
 import android.telephony.*
+import android.telephony.cdma.CdmaCellLocation
 import android.telephony.gsm.GsmCellLocation
 import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
@@ -48,7 +49,6 @@ class BackendService : LocationBackendService() {
     private var permissionsOkay = true
 
     @Volatile private var wifiScanInProgress = false // will be re-ordered by compiler if not volatile, causing weird issues
-    private var telephonyManager: TelephonyManager? = null
     private val wifiManager: WifiManager by lazy { applicationContext.getSystemService(WIFI_SERVICE) as WifiManager }
     private val wifiBroadcastReceiver: BroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -66,6 +66,21 @@ class BackendService : LocationBackendService() {
             }
         }
     }
+    private val telephonyManager: TelephonyManager by lazy { getSystemService(TELEPHONY_SERVICE) as TelephonyManager }
+    private val callInfoCallback = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q)
+        null
+    else
+        object : TelephonyManager.CellInfoCallback() {
+            override fun onCellInfo(activeCellInfo: MutableList<CellInfo>) {
+                if (DEBUG) Log.d(TAG, "onCellInfo(): cell info update arrived")
+                val oldMobileJob = mobileJob
+                mobileJob = scope.launch {
+                    oldMobileJob.join()
+                    processCellInfos(activeCellInfo)
+                }
+            }
+        }
+
     private val scope = CoroutineScope(Job() + Dispatchers.IO)
     private var mobileJob = scope.launch { }
     private var wifiJob = scope.launch { }
@@ -87,6 +102,8 @@ class BackendService : LocationBackendService() {
     private var nextWlanScanTime: Long = 0
     /** results of previous wifi scan by rfID */
     private var oldWifiSignalLevels = hashMapOf<String, Int>()
+    /** timestamp of the newest cell returned by the previous call to getAllCellInfo */
+    private var cellInfoTimestamp: Long = 0
     /** Filtered GPS (because GPS is so bad on Moto G4 Play) */
     private var kalmanGpsLocation: Kalman? = null
     /** time of the most recent Kalman time in the previous processing period */
@@ -121,7 +138,7 @@ class BackendService : LocationBackendService() {
         if (emitterCache == null)
             emitterCache = Cache(this)
         permissionsOkay = true
-        prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        prefs = PreferenceManager.getDefaultSharedPreferences(this) // to fix deprecation: use androidx.preference:preference
         if (prefs.getString(PREF_BUILD, "") != Build.FINGERPRINT) {
             // remove usual ASU values if build changed
             // because results might be different in a different build
@@ -302,6 +319,7 @@ class BackendService : LocationBackendService() {
      * @returns whether a scan was started
      */
     @Synchronized
+    @Suppress("Deprecation") // initiating a WiFi scan is deprecated... well thanks, Google.
     private fun startWiFiScan(): Boolean {
         // Throttle scanning for WiFi APs. In open terrain an AP could cover a kilometer.
         // Even in a vehicle moving at highway speeds it can take several seconds to traverse
@@ -347,21 +365,8 @@ class BackendService : LocationBackendService() {
             Log.w(TAG, "startMobileScan() - starting new scan while old scan job is active: something may be wrong")
         nextMobileScanTime = currentProcessTime + MOBILE_SCAN_INTERVAL
 
-        mobileJob = scope.launch { scanMobile() }
+        mobileJob = scope.launch { getMobileTowers() }
         return true
-    }
-
-    /**
-     * Scan for the mobile (cell) towers the phone sees. If we see any, then add them
-     * to the queue for background processing.
-     */
-    private suspend fun scanMobile() {
-        if (DEBUG) Log.d(TAG, "scanMobile() - calling getMobileTowers().")
-        val observations: Collection<Observation> = getMobileTowers()
-        if (observations.isNotEmpty()) {
-            if (DEBUG) Log.d(TAG, "scanMobile() - ${observations.size} records to be queued for processing.")
-            queueForProcessing(observations)
-        } else if (DEBUG) Log.d(TAG, "scanMobile() - no results")
     }
 
     /**
@@ -369,35 +374,59 @@ class BackendService : LocationBackendService() {
      * we use the current API but fall back to deprecated methods if we get a null
      * or empty result from the current API.
      *
-     * @return A set of mobile tower observations
+     * The used functions processCellInfos and deprecatedGetMobileTowers call enqueueForProcessing
+     * on any found observations
      */
     @SuppressLint("MissingPermission")
-    private suspend fun getMobileTowers(): Set<Observation> {
-        if (telephonyManager == null) {
-            telephonyManager = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
-            if (DEBUG) Log.d(TAG, "getMobileTowers(): telephony manager was null")
+    private fun getMobileTowers() {
+        // todo: need to test it, but don't have Q or later
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && packageManager.hasSystemFeature(PackageManager.FEATURE_TELEPHONY_RADIO_ACCESS)) {
+            telephonyManager.requestCellInfoUpdate(mainExecutor, callInfoCallback!!)
+            if (DEBUG) Log.d(TAG, "getMobileTowers(): requested cell info update")
+            return
+            // todo: really return and wait for callback?
+            //  or just go ahead and get the cell info?
+            //  can anything worse happen than one of the 2 calls to processCellInfos returning because of old data?
         }
-        val observations = hashSetOf<Observation>()
 
         // Try recent API to get all cell information, or fall back to deprecated method
         val allCells: List<CellInfo> = try {
-                telephonyManager!!.allCellInfo ?: emptyList()
+            telephonyManager.allCellInfo ?: emptyList()
         } catch (e: NoSuchMethodError) {
             Log.d(TAG, "getMobileTowers(): no such method: getAllCellInfo().")
             emptyList()
         }
-        if (allCells.isEmpty()) return deprecatedGetMobileTowers()
+        if (allCells.isEmpty()) deprecatedGetMobileTowers()
 
+        if (DEBUG) Log.d(TAG, "getMobileTowers(): getAllCellInfo() returned " + allCells.size + " records.")
+        processCellInfos(allCells)
+    }
+
+    /** check validity of cellInfos and call queueForProcessing using extracted observations */
+    // there are a lot of deprecated functions, but the replacements have mostly been added in
+    // API28+, so we need to use to old ones too
+    @Suppress("Deprecation")
+    private fun processCellInfos(allCells: List<CellInfo>) {
+        // from https://developer.android.com/reference/android/telephony/TelephonyManager#requestCellInfoUpdate(java.util.concurrent.Executor,%20android.telephony.TelephonyManager.CellInfoCallback)
+        // Apps targeting Android Q or higher will no longer trigger a refresh of the cached CellInfo by invoking this API. Instead, those apps will receive the latest cached results, which may not be current.
+        // -> now that we target API33 we need to check timestamp to be sure we actually got updated cell info
+        val newCells = allCells.filter { it.timeStamp > cellInfoTimestamp }
+        if (newCells.isEmpty()) {
+            if (DEBUG) Log.d(TAG, "processCellInfos() - no cells newer than old timestamp")
+            return
+        }
+        cellInfoTimestamp = newCells.maxOf { it.timeStamp }
+
+        val observations = hashSetOf<Observation>()
         val fallbackMnc by lazy {
-            val m = telephonyManager!!.networkOperator?.let { if (it.length > 4) it.substring(3) else null }?.toIntOrNull()
-            Log.d(TAG, "getMobileTowers(): using fallback mnc $m") // this triggers quite often... because some results are double with one having invalid mnc
+            val m = telephonyManager.networkOperator?.let { if (it.length > 4) it.substring(3) else null }?.toIntOrNull()
+            if (DEBUG) Log.d(TAG, "processCellInfos() - using fallback mnc $m") // this triggers quite often... because some results are double with one having invalid mnc
             m
         }
-        if (DEBUG) Log.d(TAG, "getMobileTowers(): getAllCellInfo() returned " + allCells.size + " records.")
         val uptimeNanos = System.nanoTime()
         val realtimeNanos = SystemClock.elapsedRealtimeNanos()
-        for (info in allCells) {
-            if (DEBUG) Log.v(TAG, "getMobileTowers(): inputCellInfo: $info")
+        for (info in newCells) {
+            if (DEBUG) Log.v(TAG, "processCellInfos() - inputCellInfo: $info")
             val idStr: String
             val asu: Int
             val type: EmitterType
@@ -440,7 +469,6 @@ class BackendService : LocationBackendService() {
                         else id.mnc.takeIf { it != intMax }
                         ) ?: fallbackMnc ?: continue
 
-                // CellIdentityGsm accessors all state Integer.MAX_VALUE is returned for unknown values.
                 // analysis of results show frequent (invalid!) LAC of 0 messing with results, so ignore it
                 if (id.lac == intMax || id.lac == 0 || id.cid == intMax)
                     continue
@@ -464,7 +492,6 @@ class BackendService : LocationBackendService() {
                         else id.mnc.takeIf { it != intMax }
                         ) ?: fallbackMnc ?: continue
 
-                // CellIdentityWcdma accessors all state Integer.MAX_VALUE is returned for unknown values.
                 if (id.lac == intMax || id.lac == 0 || id.cid == intMax)
                     continue
 
@@ -474,65 +501,97 @@ class BackendService : LocationBackendService() {
 
             } else if (info is CellInfoCdma) {
                 val id = info.cellIdentity
-                // CellIdentityCdma accessors all state Integer.MAX_VALUE is returned for unknown values.
                 if (id.networkId == intMax || id.systemId == intMax || id.basestationId == intMax)
                     continue
 
                 idStr = "${EmitterType.CDMA}/${id.networkId}/${id.systemId}/${id.basestationId}"
                 asu = info.cellSignalStrength.asuLevel
                 type = EmitterType.CDMA
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && info is CellInfoTdscdma) {
+                val id = info.cellIdentity
+                if (id.mncString == null || id.mccString == null || id.lac == intMax || id.cid == intMax || id.cpid == intMax)
+                    continue
+
+                idStr = "${EmitterType.TDSCDMA}/${id.mncString}/${id.mccString}/${id.lac}/${id.cid}&${id.cpid}"
+                asu = info.cellSignalStrength.asuLevel
+                type = EmitterType.TDSCDMA
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && info is CellInfoNr) {
+                // todo: there is also the short range NR, which should be a separate emitter type if we can tell it apart
+                val id = info.cellIdentity as? CellIdentityNr ?: continue // why is casting necessary??
+                if (id.mncString == null || id.mccString == null || id.nci == Long.MAX_VALUE || id.pci == intMax || id.tac == intMax)
+                    continue
+
+                idStr = "${EmitterType.NR}/${id.mncString}/${id.mccString}/${id.nci}/${id.pci}&${id.tac}"
+                asu = info.cellSignalStrength.asuLevel
+                type = EmitterType.NR
             } else {
-                // todo: add NR and TDSCDMA after api update
-                Log.d(TAG, "getMobileTowers(): Unsupported Cell type: $info")
+                Log.d(TAG, "processCellInfos() - Unsupported Cell type: $info")
                 continue
             }
-            // for some reason, timestamp for cellInfo is like uptimeMillis (not advancing during sleep),
-            // but wifi scanResult.timestamp is like elapsedRealtime (advancing during sleep)
-            // since we need the latter for location time, convert it
-            // (documentation is not clear about this, and actually indicates the latter... but tests show it's the former)
+            /*
+             * For some reason, timeStamp for cellInfo is like uptimeMillis (not advancing during sleep),
+             * but wifi scanResult.timestamp is like elapsedRealtime (advancing during sleep).
+             * Since we need the latter for location time, convert it!
+             * Focumentation is not clear about this, and actually indicates the latter... but
+             * tests show it's the former.
+             * From API30 there is timestampMillis, which is less weird but not available for lower APIs
+             */
             val o = Observation(idStr, type, asu, realtimeNanos - uptimeNanos + info.timeStamp)
             observations.add(o)
-            if (DEBUG) Log.d(TAG, "valid observation string: $idStr, asu $asu")
+            if (DEBUG) Log.d(TAG, "processCellInfos() - valid observation string: $idStr, asu $asu")
         }
-        if (DEBUG) Log.d(TAG, "getMobileTowers(): Observations: $observations")
-        return observations
+        if (DEBUG) Log.d(TAG, "processCellInfos() - Observations: $observations")
+        if (observations.isNotEmpty())
+            queueForProcessing(observations)
     }
 
     /**
      * Use old but still implemented methods to gather information about the mobile (cell)
-     * towers our phone sees. Only called if the non-deprecated methods fail to return a
-     * usable result.
-     * Method removed in API 29
-     *
-     * @return A set of observations for all the towers Android is reporting.
+     * towers our phone sees. Only called if the non-deprecated methods fail to return
+     * usable cell infos.
+     * getNeighboringCellInfo method was removed in API 29, but we still try using it
+     * through reflection, as on older phones getAllCellInfo might not work correctly.
      */
     @SuppressLint("MissingPermission")
-    // todo: remove after api upgrade, and integrate the first part in getMobileTowers
-    private fun deprecatedGetMobileTowers(): HashSet<Observation> {
+    @Suppress("Deprecation") // yes, deprecatedGetMobileTowers used deprecated (and even removed) methods
+    private fun deprecatedGetMobileTowers() {
         if (DEBUG) Log.d(TAG, "getMobileTowers(): allCells null or empty, using deprecated")
         val observations = hashSetOf<Observation>()
-        val mncString = telephonyManager!!.networkOperator
+        val mncString = telephonyManager.networkOperator
         if (mncString == null || mncString.length < 5 || mncString.length > 6) {
             if (DEBUG) Log.d(TAG, "deprecatedGetMobileTowers(): mncString is NULL or not recognized.")
-            return observations
+            return
         }
-        val mcc = mncString.substring(0, 3).toIntOrNull() ?: return observations
-        val mnc = mncString.substring(3).toIntOrNull() ?: return observations
+        val mcc = mncString.substring(0, 3).toIntOrNull() ?: return
+        val mnc = mncString.substring(3).toIntOrNull() ?: return
         val timeNanos = SystemClock.elapsedRealtimeNanos()
 
         try {
-            val info = telephonyManager!!.cellLocation
+            val info = telephonyManager.cellLocation
             if (info is GsmCellLocation) {
                 val idStr = "${EmitterType.GSM}/$mcc/$mnc/${info.lac}/${info.cid}"
                 val o = Observation(idStr, EmitterType.GSM, MINIMUM_ASU, timeNanos)
                 observations.add(o)
-            } else if (DEBUG) Log.d(TAG, "deprecatedGetMobileTowers(): getCellLocation() returned null or not GsmCellLocation.")
+            } else if (info is CdmaCellLocation) {
+                val idStr = "${EmitterType.CDMA}/${info.networkId}/${info.systemId}/${info.baseStationId}"
+                val o = Observation(idStr, EmitterType.CDMA, MINIMUM_ASU, timeNanos)
+                observations.add(o)
+            } else if (DEBUG)
+                Log.d(TAG, "deprecatedGetMobileTowers(): getCellLocation() returned null or not unknown CellLocation.")
         } catch (e: Throwable) {
+            // this happens e.g. in MIUI 12 where getCellLocation is apparently (always?)) crashing
+            // see https://github.com/Helium314/Local-NLP-Backend/pull/5#discussion_r991915543
             if (DEBUG) Log.d(TAG, "getCellLocation(): failed")
         }
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (observations.isNotEmpty())
+                queueForProcessing(observations)
+            return // getNeighboringCellInfo does not exist for these API levels, so no need to try
+        }
         try {
-            val neighbors = telephonyManager!!.neighboringCellInfo
+            // getNeighboringCellInfo can't be called directly when targeting API29+, so try using reflection
+            val neighbors = telephonyManager.javaClass.getMethod("getNeighboringCellInfo").invoke(telephonyManager) as? List<NeighboringCellInfo>
             if (neighbors != null && neighbors.isNotEmpty()) {
                 for (neighbor in neighbors) {
                     if (neighbor.cid > 0 && neighbor.lac > 0) {
@@ -544,10 +603,11 @@ class BackendService : LocationBackendService() {
             } else {
                 if (DEBUG) Log.d(TAG, "deprecatedGetMobileTowers(): getNeighboringCellInfo() returned null or empty set.")
             }
-        } catch (e: NoSuchMethodError) {
-            if (DEBUG) Log.d(TAG, "deprecatedGetMobileTowers(): no such method: getNeighboringCellInfo().")
+        } catch (e: Exception) {
+            if (DEBUG) Log.d(TAG, "deprecatedGetMobileTowers(): error calling getNeighboringCellInfo(): ${e.message}.")
         }
-        return observations
+        if (observations.isNotEmpty())
+            queueForProcessing(observations)
     }
 
     /**
@@ -730,7 +790,8 @@ class BackendService : LocationBackendService() {
                     intent.putExtra(ACTIVE_MODE_TIME, activeTimeout)
                     intent.putExtra(ACTIVE_MODE_ACCURACY, requiredAccuracyForGps.toFloat())
                     intent.action = ACTIVE_MODE_ACTION
-                    localBroadcastManager.sendBroadcast(intent) // tell GpsMonitor to start GPS
+                    localBroadcastManager.sendBroadcast(intent)
+                    if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - send intent to start GPS")
                 }
             }
 
@@ -891,10 +952,17 @@ private const val GPS_COORDINATE_NOISE = 2.0 // reduced from initial 3.0 to get 
 private val DEBUG = BuildConfig.DEBUG
 
 private const val TAG = "LocalNLP Backend"
-private val myPerms = arrayOf(
-    permission.ACCESS_WIFI_STATE, permission.CHANGE_WIFI_STATE,
-    permission.ACCESS_COARSE_LOCATION, permission.ACCESS_FINE_LOCATION
-)
+private val myPerms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+    arrayOf(
+        permission.ACCESS_WIFI_STATE, permission.CHANGE_WIFI_STATE,
+        permission.ACCESS_COARSE_LOCATION, permission.ACCESS_FINE_LOCATION, permission.ACCESS_BACKGROUND_LOCATION
+    )
+} else {
+    arrayOf(
+        permission.ACCESS_WIFI_STATE, permission.CHANGE_WIFI_STATE,
+        permission.ACCESS_COARSE_LOCATION, permission.ACCESS_FINE_LOCATION
+    )
+}
 
 // Stuff for scanning WiFi APs
 private val wifiBroadcastFilter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION)

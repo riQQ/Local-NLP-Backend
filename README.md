@@ -14,13 +14,8 @@ This backend uses no network data. All data acquired by the phone stays on the p
 Modified version
 ================
 This version has several changes compared to *Déjà Vu*, see the [changelog](CHANGELOG.md) starting at 1.2.0-beta.
+Aside from upgrades incorporating recent Android versions, an "active mode" was added, which can be used to build up the database at the cost of some battery.
 Local NLP Backend is capable of using and importing any database used in *Déjà Vu*, but be aware that you need root privileges to extract the database.
-
-Potential future improvements:
-* Improve method for determining which emitters to discard in case of conflicting position report
-* Upgrade to more recent Android API. This means some old method for detecting mobile cells will be removed, and may break cell detection on some old devices.
-* Enable detecting 5G emitters and maybe other types (API upgrade necessary).
-* Find and fix potential bugs
 
 Requirements on phone
 =====================
@@ -54,6 +49,7 @@ Permissions Required
 |:----------|:---|
 ACCESS_COARSE_LOCATION|Allows backend to determine which cell towers your phone detects.
 ACCESS_FINE_LOCATION|Allows backend to determine which WiFis your phone detect and monitor position reports from the GPS.
+ACCESS_BACKGROUND_LOCATION|Necessary on Android 10 and higher, as the backend only runs in foreground when using active mode.
 CHANGE_WIFI_STATE|Allows backend to scan for nearby WiFis.
 ACCESS_WIFI_STATE|Allows backend to access WiFi scan results.
 FOREGROUND_SERVICE|Needed so GPS can be used in active mode.

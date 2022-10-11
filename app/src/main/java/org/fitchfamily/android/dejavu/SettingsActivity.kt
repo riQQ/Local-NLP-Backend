@@ -22,15 +22,13 @@ package org.fitchfamily.android.dejavu
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.app.ProgressDialog // deprecated, but replacement is annoying to handle...
+import android.app.ProgressDialog // deprecated, but replacement is annoying to handle... though just adjusting messages should be simple, right? the there is no nice spinning circle
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
 import android.graphics.Color
-import android.location.Location
-import android.location.LocationListener
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
@@ -151,6 +149,7 @@ class SettingsActivity : PreferenceActivity() {
         val collisionKeep = SQLiteDatabase.CONFLICT_IGNORE
         val collisionMerge = 0
 
+        // todo: try simply replacing progressDialog with alertDialog
         fun readFromFile(collision: Int, readFormat: Int, mlsIgnoreTypes: Set<String>, mlsCountryCodes: Set<String>) {
             val db = Database(this)
             val pd = ProgressDialog(this)
@@ -257,6 +256,8 @@ class SettingsActivity : PreferenceActivity() {
                     otherDb.close()
                 } catch (e: Exception) {
                     Log.w(TAG, "import / readFromDatabase - error", e)
+                    // todo: got a crash here because we are not in a transaction - which actually is checked... wtf?
+                    //  happened by: import, cancel (using dialog cancel), import again -> couldn't reproduce
                     db.cancelTransaction()
                     runOnUiThread { Toast.makeText(sa, getString(R.string.import_error_database, e.message), Toast.LENGTH_LONG).show() }
                 }
@@ -380,7 +381,8 @@ class SettingsActivity : PreferenceActivity() {
     }
 
     private fun exportToFile(uri: Uri) {
-        val os = contentResolver?.openOutputStream(uri)?.bufferedWriter() ?: return
+        val outputStream = contentResolver?.openOutputStream(uri) ?: return
+        val os = outputStream.bufferedWriter()
         BackendService.instance?.onClose()
         val db = Database(this)
         val pd = ProgressDialog(this)
@@ -423,29 +425,23 @@ class SettingsActivity : PreferenceActivity() {
             db.close()
             runOnUiThread { Toast.makeText(sa, R.string.export_done, Toast.LENGTH_LONG).show() }
             pd.dismiss()
+            outputStream.close()
         }
     }
 
-//    @Suppress("DEPRECATION") // requestSingleUpdate is deprecated, but there is no replacement for api < 30
+    @Suppress("Deprecation") // requestSingleUpdate is deprecated, but there is no replacement for api < 30
     private fun onClickScan() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
             && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
         )
-            return // should not happen, permissions are requested on start
+            return // do nothing, this means the user actively denied location access
 
         // request location, because backendService may not be running
         val lm = applicationContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-//        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) // todo: enable this once API is upgraded
-//            lm.getCurrentLocation(LocationManager.NETWORK_PROVIDER, null, {  }, {  })
-//        else
-//            lm.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, { }, null)
-        val l = object : LocationListener {
-            override fun onLocationChanged(p0: Location?) {}
-            override fun onStatusChanged(p0: String?, p1: Int, p2: Bundle?) {}
-            override fun onProviderEnabled(p0: String?) {}
-            override fun onProviderDisabled(p0: String?) {}
-        }
-        lm.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, l, null)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+            lm.getCurrentLocation(LocationManager.NETWORK_PROVIDER, null, {  }, {  })
+        else
+            lm.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, { }, null)
 
         try {
             runBlocking { withTimeout(3500) {
@@ -458,7 +454,8 @@ class SettingsActivity : PreferenceActivity() {
         }
     }
 
-    @SuppressLint("SetTextI18n") // we want to concatenate the text string, requiring resource strings for ids doesn't make sense
+    // todo: also show asu (convert it to some percentage value or 5 steps...)
+    @SuppressLint("SetTextI18n") // we want to concatenate the text string, requiring resource strings for emitter ids doesn't make sense
     fun showEmitters(emitters: Collection<RfEmitter>) = runOnUiThread {
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         var d: AlertDialog? = null
