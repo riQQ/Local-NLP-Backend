@@ -518,22 +518,19 @@ class BackendService : LocationBackendService() {
         }
         val mcc = mncString.substring(0, 3).toIntOrNull() ?: return observations
         val mnc = mncString.substring(3).toIntOrNull() ?: return observations
-        var info: CellLocation? = null
+        val timeNanos = SystemClock.elapsedRealtimeNanos()
 
         try {
             val info = telephonyManager!!.cellLocation
+            if (info is GsmCellLocation) {
+                val idStr = "${EmitterType.GSM}/$mcc/$mnc/${info.lac}/${info.cid}"
+                val o = Observation(idStr, EmitterType.GSM, MINIMUM_ASU, timeNanos)
+                observations.add(o)
+            } else if (DEBUG) Log.d(TAG, "deprecatedGetMobileTowers(): getCellLocation() returned null or not GsmCellLocation.")
         } catch (e: Throwable) {
             if (DEBUG) Log.d(TAG, "getCellLocation(): failed")
         }
 
-        val timeNanos = SystemClock.elapsedRealtimeNanos()
-        if (info != null && info is GsmCellLocation) {
-            val idStr = "${EmitterType.GSM}/$mcc/$mnc/${info.lac}/${info.cid}"
-            val o = Observation(idStr, EmitterType.GSM, MINIMUM_ASU, timeNanos)
-            observations.add(o)
-        } else {
-            if (DEBUG) Log.d(TAG, "deprecatedGetMobileTowers(): getCellLocation() returned null or not GsmCellLocation.")
-        }
         try {
             val neighbors = telephonyManager!!.neighboringCellInfo
             if (neighbors != null && neighbors.isNotEmpty()) {
@@ -749,8 +746,8 @@ class BackendService : LocationBackendService() {
                 emitterCache!!.sync()
             }
         }
-
         if (locations.isEmpty()) return
+
         // Estimate location using weighted average of the most recent
         // observations from the set of RF emitters we have seen. We cull
         // the locations based on distance from each other to reduce the
