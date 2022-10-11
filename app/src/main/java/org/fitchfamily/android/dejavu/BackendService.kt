@@ -750,17 +750,17 @@ class BackendService : LocationBackendService() {
             }
         }
 
-        if (!locations.isEmpty()) {
-            // Estimate location using weighted average of the most recent
-            // observations from the set of RF emitters we have seen. We cull
-            // the locations based on distance from each other to reduce the
-            // chance that a moved/moving emitter will be used in the computation.
-            val weightedAverageLocation = when (cull) {
-                1 -> locations.medianCullSafe()
-                2 -> locations.weightedAverage()
-                else -> culledEmitters(locations)?.weightedAverage()
-            }
-            if (weightedAverageLocation != null && notNullIsland(weightedAverageLocation)) {
+        if (locations.isEmpty()) return
+        // Estimate location using weighted average of the most recent
+        // observations from the set of RF emitters we have seen. We cull
+        // the locations based on distance from each other to reduce the
+        // chance that a moved/moving emitter will be used in the computation.
+        val weightedAverageLocation = when (cull) {
+            1 -> locations.medianCullSafe()
+            2 -> locations.weightedAverage()
+            else -> culledEmitters(locations)?.weightedAverage()
+        }
+        if (weightedAverageLocation != null && notNullIsland(weightedAverageLocation)) {
 /*            if (DEBUG) { // this is just for testing / comparing the different locations
                 // lat positive: alternative puts me further south
                 // lon positive: alternative puts me further west
@@ -775,12 +775,11 @@ class BackendService : LocationBackendService() {
                 val newThing = locations.medianCullSafe()
                 Log.v(TAG, "avg (${weightedAverageLocation.accuracy}) minus medianCullSafe loc (${newThing?.accuracy}): lat ${(weightedAverageLocation.latitude - (newThing?.latitude?:0.0))* DEG_TO_METER}m, lon ${(weightedAverageLocation.longitude - (newThing?.longitude?:0.0)) * DEG_TO_METER * cos(Math.toRadians(weightedAverageLocation.latitude))}m")
             }*/
-                if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - reporting location")
-                // for some weird reason, reporting may (very rarely) take REALLY long, even minutes
-                // this may be an issue of unifiedNLP instead of the backend... anyway, do it in background!
-                scope.launch { report(weightedAverageLocation) }
-            } else if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - no location to report")
-        }
+            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - reporting location")
+            // for some weird reason, reporting may (very rarely) take REALLY long, even minutes
+            // this may be an issue of unifiedNLP instead of the backend... anyway, do it in background!
+            scope.launch { report(weightedAverageLocation) }
+        } else if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - no location to report")
     }
 
     /**
