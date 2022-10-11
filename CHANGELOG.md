@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Removed
 - Not applicable
 
-## [1.2.2.beta.1] - 2022-10-xx
+## [1.2.2.beta.1] - 2022-10-11
 ### Added
 - Support for 5G and TDSCDMA cells
 

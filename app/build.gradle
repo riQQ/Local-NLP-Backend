@@ -4,14 +4,11 @@ apply plugin: 'kotlin-android'
 android {
     compileSdkVersion 33
     defaultConfig {
-        applicationId "helium314.localbackend.test"
+        applicationId "helium314.localbackend"
         minSdkVersion 18
-        // problem1: TelephonyManager.neighboringCellInfo is removed in API 29, but some old phones need it
-        // problem2: support for 5G and 6 GHz WiFi is added in higher APIs
-        // -> first release non-beta version with old API, then upgrade
         targetSdkVersion 33
-        versionCode 28
-        versionName "1.2.1"
+        versionCode 29
+        versionName "1.2.2-beta.1"
     }
     buildTypes {
         release {
@@ -21,7 +18,6 @@ android {
         }
     }
     lintOptions {
-        abortOnError false // otherwise targetSdk 28 won't compile
         disable 'MissingTranslation'
     }
     namespace "org.fitchfamily.android.dejavu"
@@ -29,7 +25,8 @@ android {
 }
 
 dependencies {
-    implementation 'androidx.appcompat:appcompat:1.0.0'
+    implementation 'androidx.appcompat:appcompat:1.5.1'
+    implementation 'androidx.localbroadcastmanager:localbroadcastmanager:1.1.0'
     implementation 'org.microg:unifiednlp-api:1.5.6'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.4'
 }

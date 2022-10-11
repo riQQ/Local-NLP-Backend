@@ -384,7 +384,7 @@ class BackendService : LocationBackendService() {
             telephonyManager.requestCellInfoUpdate(mainExecutor, callInfoCallback!!)
             if (DEBUG) Log.d(TAG, "getMobileTowers(): requested cell info update")
             return
-            // todo: really return and wait for callback?
+            // todo: really return and trust Android to do the callback?
             //  or just go ahead and get the cell info?
             //  can anything worse happen than one of the 2 calls to processCellInfos returning because of old data?
         }
@@ -450,9 +450,9 @@ class BackendService : LocationBackendService() {
                 if (id.ci == intMax || id.pci == intMax || id.tac == intMax)
                     continue
 
-                idStr = "${EmitterType.LTE}/$mccString/$mncInt/${id.ci}/${id.pci}/${id.tac}"
-                asu = info.cellSignalStrength.asuLevel * MAXIMUM_ASU / 97
                 type = EmitterType.LTE
+                idStr = "$type/$mccString/$mncInt/${id.ci}/${id.pci}/${id.tac}"
+                asu = info.cellSignalStrength.asuLevel * MAXIMUM_ASU / 97
             } else if (info is CellInfoGsm) {
                 val id = info.cellIdentity
 
@@ -473,9 +473,9 @@ class BackendService : LocationBackendService() {
                 if (id.lac == intMax || id.lac == 0 || id.cid == intMax)
                     continue
 
-                idStr = "${EmitterType.GSM}/$mccString/$mncInt/${id.lac}/${id.cid}"
-                asu = info.cellSignalStrength.asuLevel
                 type = EmitterType.GSM
+                idStr = "$type/$mccString/$mncInt/${id.lac}/${id.cid}"
+                asu = info.cellSignalStrength.asuLevel
             } else if (info is CellInfoWcdma) {
                 val id = info.cellIdentity
 
@@ -495,35 +495,34 @@ class BackendService : LocationBackendService() {
                 if (id.lac == intMax || id.lac == 0 || id.cid == intMax)
                     continue
 
-                idStr = "${EmitterType.WCDMA}/$mccString/$mncInt/${id.lac}/${id.cid}"
-                asu = info.cellSignalStrength.asuLevel
                 type = EmitterType.WCDMA
-
+                idStr = "$type/$mccString/$mncInt/${id.lac}/${id.cid}"
+                asu = info.cellSignalStrength.asuLevel
             } else if (info is CellInfoCdma) {
                 val id = info.cellIdentity
                 if (id.networkId == intMax || id.systemId == intMax || id.basestationId == intMax)
                     continue
 
-                idStr = "${EmitterType.CDMA}/${id.networkId}/${id.systemId}/${id.basestationId}"
-                asu = info.cellSignalStrength.asuLevel
                 type = EmitterType.CDMA
+                idStr = "$type/${id.networkId}/${id.systemId}/${id.basestationId}"
+                asu = info.cellSignalStrength.asuLevel
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && info is CellInfoTdscdma) {
                 val id = info.cellIdentity
                 if (id.mncString == null || id.mccString == null || id.lac == intMax || id.cid == intMax || id.cpid == intMax)
                     continue
 
-                idStr = "${EmitterType.TDSCDMA}/${id.mncString}/${id.mccString}/${id.lac}/${id.cid}&${id.cpid}"
-                asu = info.cellSignalStrength.asuLevel
                 type = EmitterType.TDSCDMA
+                idStr = "$type}/${id.mncString}/${id.mccString}/${id.lac}/${id.cid}&${id.cpid}"
+                asu = info.cellSignalStrength.asuLevel
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && info is CellInfoNr) {
-                // todo: there is also the short range NR, which should be a separate emitter type if we can tell it apart
                 val id = info.cellIdentity as? CellIdentityNr ?: continue // why is casting necessary??
                 if (id.mncString == null || id.mccString == null || id.nci == Long.MAX_VALUE || id.pci == intMax || id.tac == intMax)
                     continue
 
-                idStr = "${EmitterType.NR}/${id.mncString}/${id.mccString}/${id.nci}/${id.pci}&${id.tac}"
                 asu = info.cellSignalStrength.asuLevel
-                type = EmitterType.NR
+                type = if (id.nrarfcn > 2000000 && id.nrarfcn != intMax) EmitterType.NR_FR2 // FR2 supposedly starting at 2016667
+                    else EmitterType.NR
+                idStr = "$type/${id.mncString}/${id.mccString}/${id.nci}/${id.pci}&${id.tac}"
             } else {
                 Log.d(TAG, "processCellInfos() - Unsupported Cell type: $info")
                 continue

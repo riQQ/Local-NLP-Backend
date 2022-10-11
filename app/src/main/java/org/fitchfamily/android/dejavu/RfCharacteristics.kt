@@ -41,6 +41,7 @@ enum class EmitterType {
     TDSCDMA,
     LTE,
     NR,
+    NR_FR2, // frequency range 2, with typical range of few 100 meters
 }
 
 private const val METERS: Float = 1.0f
@@ -59,7 +60,9 @@ fun EmitterType.getRfCharacteristics(): RfCharacteristics =
         EmitterType.WLAN2 -> characteristicsWlan24
         EmitterType.WLAN5, EmitterType.WLAN6 -> characteristicsWlan5 // small difference in frequency doesn't change range significantly
         EmitterType.GSM -> characteristicsGsm
-        EmitterType.CDMA, EmitterType.WCDMA, EmitterType.TDSCDMA, EmitterType.LTE, EmitterType.NR -> characteristicsLte // maybe use separate characteristics?
+        // maybe use separate characteristics? but they strongly depend on the used frequency...
+        EmitterType.CDMA, EmitterType.WCDMA, EmitterType.TDSCDMA, EmitterType.LTE, EmitterType.NR -> characteristicsLte
+        EmitterType.NR_FR2 -> characteristicsNrFr2
         EmitterType.BT -> characteristicsBluetooth
         EmitterType.INVALID -> characteristicsUnknown
     }
@@ -110,12 +113,11 @@ private val characteristicsLte = RfCharacteristics(
     1
 )
 
-// todo: 5G millimeter wave have less than 500 m range, but how to separate from "other" 5G?
-//  could be getBands (band > 250) or getNrarfcn (more complicated it seems)
-private val characteristics5Gmm = RfCharacteristics(
-    20F * METERS,
-    50.0 * METERS,
-    500.0 * KM,
+// 5G FR2 supposedly has a range of 300 m, and up to 1 km with beam forming
+private val characteristicsNrFr2 = RfCharacteristics(
+    25F * METERS,
+    70.0 * METERS,
+    1000.0 * KM,
     1
 )
 
