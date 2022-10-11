@@ -22,7 +22,6 @@ package org.fitchfamily.android.dejavu
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.app.ProgressDialog // deprecated, but replacement is annoying to handle... though just adjusting messages should be simple, right? the there is no nice spinning circle
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -149,20 +148,20 @@ class SettingsActivity : PreferenceActivity() {
         val collisionKeep = SQLiteDatabase.CONFLICT_IGNORE
         val collisionMerge = 0
 
-        // todo: try simply replacing progressDialog with alertDialog
         fun readFromFile(collision: Int, readFormat: Int, mlsIgnoreTypes: Set<String>, mlsCountryCodes: Set<String>) {
             val db = Database(this)
-            val pd = ProgressDialog(this)
             var importJob: Job? = null
             var i = 0
             var j = 0
-            pd.setTitle(R.string.import_title)
-            pd.setMessage(getString(R.string.import_number_progress, i, j))
-            pd.setOnCancelListener {
+            val dialogBuilder = AlertDialog.Builder(this)
+            dialogBuilder.setTitle(R.string.import_title)
+            dialogBuilder.setMessage(getString(R.string.import_number_progress, i, j))
+            dialogBuilder.setCancelable(false)
+            dialogBuilder.setNegativeButton(android.R.string.cancel) { _, _ ->
                 importJob?.cancel()
                 Toast.makeText(this, R.string.import_canceled, Toast.LENGTH_LONG).show()
             }
-            pd.show()
+            val dialog = dialogBuilder.show()
             val sa = this
             importJob = scope.launch(Dispatchers.IO) {
                 db.beginTransaction()
@@ -189,7 +188,7 @@ class SettingsActivity : PreferenceActivity() {
                             }
                             if ((i + j) % 500 == 0) {
 
-                                runOnUiThread { pd.setMessage(getString(R.string.import_number_progress, i, j)) }
+                                runOnUiThread { dialog.setMessage(getString(R.string.import_number_progress, i, j)) }
                                 if (!coroutineContext.isActive) {
                                     db.cancelTransaction()
                                     break
@@ -206,7 +205,7 @@ class SettingsActivity : PreferenceActivity() {
                 db.endTransaction()
                 db.close()
                 inputStream.close()
-                pd.dismiss()
+                dialog.dismiss()
                 runOnUiThread { Toast.makeText(sa, R.string.import_done, Toast.LENGTH_LONG).show() }
             }
         }
@@ -216,15 +215,16 @@ class SettingsActivity : PreferenceActivity() {
             val dbFile = File(this.applicationInfo.dataDir + File.separator + "databases" + File.separator + "tmp.db")
             dbFile.delete()
             dbFile.parentFile?.mkdirs()
-            val pd = ProgressDialog(this)
             var importJob: Job? = null
-            pd.setTitle(R.string.import_title)
-            pd.setMessage("0 / ?")
-            pd.setOnCancelListener {
+            val dialogBuilder = AlertDialog.Builder(this)
+            dialogBuilder.setTitle(R.string.import_title)
+            dialogBuilder.setMessage("0 / ?")
+            dialogBuilder.setCancelable(false)
+            dialogBuilder.setNegativeButton(android.R.string.cancel) { _, _ ->
                 importJob?.cancel()
                 Toast.makeText(this, R.string.import_canceled, Toast.LENGTH_LONG).show()
             }
-            pd.show()
+            val dialog = dialogBuilder.show()
             val sa = this
             importJob = scope.launch(Dispatchers.IO) {
                 dbFile.outputStream().use { inputStream.copyTo(it) }
@@ -232,7 +232,7 @@ class SettingsActivity : PreferenceActivity() {
                 try {
                     val otherDb = Database(sa, "tmp.db")
                     val max = otherDb.getSize()
-                    pd.setMessage("0 / $max")
+                    runOnUiThread { dialog.setMessage("0 / $max") }
                     // read each entry and copy it to db, respecting collision
                     otherDb.beginTransaction()
                     db.beginTransaction()
@@ -241,7 +241,7 @@ class SettingsActivity : PreferenceActivity() {
                         db.insert(it, collision)
                         i++
                         if (i % 100 == 0) {
-                            runOnUiThread { pd.setMessage("$i / $max") }
+                            runOnUiThread { dialog.setMessage("$i / $max") }
                             if (!coroutineContext.isActive) {
                                 db.cancelTransaction()
                                 db.close()
@@ -264,7 +264,7 @@ class SettingsActivity : PreferenceActivity() {
                 db.endTransaction()
                 dbFile.delete()
                 db.close()
-                pd.dismiss()
+                dialog.dismiss()
                 runOnUiThread { Toast.makeText(sa, R.string.import_done, Toast.LENGTH_LONG).show() }
             }
         }
@@ -385,16 +385,17 @@ class SettingsActivity : PreferenceActivity() {
         val os = outputStream.bufferedWriter()
         BackendService.instance?.onClose()
         val db = Database(this)
-        val pd = ProgressDialog(this)
         var exportJob: Job? = null
         val max = db.getSize()
-        pd.setTitle(R.string.export_title)
-        pd.setMessage("0 / $max")
-        pd.setOnCancelListener {
+        val dialogBuilder = AlertDialog.Builder(this)
+        dialogBuilder.setTitle(R.string.export_title)
+        dialogBuilder.setMessage("0 / $max")
+        dialogBuilder.setCancelable(false)
+        dialogBuilder.setNegativeButton(android.R.string.cancel) { _, _ ->
             exportJob?.cancel()
             Toast.makeText(this, R.string.export_canceled, Toast.LENGTH_LONG).show()
         }
-        pd.show()
+        val dialog = dialogBuilder.show()
         val sa = this
         exportJob = scope.launch(Dispatchers.IO) {
             try {
@@ -407,7 +408,7 @@ class SettingsActivity : PreferenceActivity() {
                     os.write("${it.uniqueId},${it.type},${it.lat},${it.lon},${it.radiusNS},${it.radiusEW},${it.note}\n")
                     i++
                     if (i % 100 == 0) {
-                        runOnUiThread { pd.setMessage("$i / $max") }
+                        runOnUiThread { dialog.setMessage("$i / $max") }
                         if (!coroutineContext.isActive) {
                             db.cancelTransaction()
                             db.close()
@@ -424,7 +425,7 @@ class SettingsActivity : PreferenceActivity() {
             os.close()
             db.close()
             runOnUiThread { Toast.makeText(sa, R.string.export_done, Toast.LENGTH_LONG).show() }
-            pd.dismiss()
+            dialog.dismiss()
             outputStream.close()
         }
     }
