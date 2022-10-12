@@ -160,6 +160,7 @@ class GpsMonitor : Service(), LocationListener {
         if (DEBUG) Log.d(TAG, "getGpsPosition() - trying to start for $timeout ms")
         try {
             startForeground(NOTIFICATION_ID, notification)
+            notification.`when` = System.currentTimeMillis()
             gpsLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, GPS_SAMPLE_TIME, GPS_SAMPLE_DISTANCE, this)
             gpsRunning = scope.launch(Dispatchers.IO) { gpsTimeout(timeout) }
             targetAccuracy = accuracy
