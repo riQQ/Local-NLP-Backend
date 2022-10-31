@@ -112,6 +112,8 @@ class BackendService : LocationBackendService() {
     @Volatile private var lastGpsOfThisPeriod: Location? = null
     // for calling GpsMonitor
     private val localBroadcastManager by lazy { LocalBroadcastManager.getInstance(this) }
+    /** emitters that recently triggered a GPS start in active mode */
+    private val activeModeStarters = hashSetOf<RfIdentification>()
 
     // settings that are read often, so better copy them here
     // setting changes propagate here because settingsFragment closes BackendService, and thus it's re-opened
@@ -415,11 +417,13 @@ class BackendService : LocationBackendService() {
             if (DEBUG) Log.d(TAG, "processCellInfos() - no cells newer than old timestamp")
             return
         }
+        if (DEBUG && newCells.size != allCells.size)
+            Log.d(TAG, "processCellInfos() - removed ${allCells.size - newCells.size} old cells")
         cellInfoTimestamp = newCells.maxOf { it.timeStamp }
 
         val observations = hashSetOf<Observation>()
         val fallbackMnc by lazy {
-            val m = telephonyManager.networkOperator?.let { if (it.length > 4) it.substring(3) else null }?.toIntOrNull()
+            val m = telephonyManager.networkOperator?.takeIf { it.length > 4 }?.substring(3)?.toIntOrNull()
             if (DEBUG) Log.d(TAG, "processCellInfos() - using fallback mnc $m") // this triggers quite often... because some results are double with one having invalid mnc
             m
         }
@@ -594,6 +598,7 @@ class BackendService : LocationBackendService() {
             if (neighbors != null && neighbors.isNotEmpty()) {
                 for (neighbor in neighbors) {
                     if (neighbor.cid > 0 && neighbor.lac > 0) {
+                        // these are GSM cells. 3G can be detected, but don't contain enough info for identification
                         val idStr = "${EmitterType.GSM}/$mcc/$mnc/${neighbor.lac}/${neighbor.cid}"
                         val o = Observation(idStr, EmitterType.GSM, neighbor.rssi, timeNanos)
                         observations.add(o)
@@ -637,6 +642,10 @@ class BackendService : LocationBackendService() {
             )
             if (DEBUG) Log.v(TAG, "$o, level=${scanResult.level}")
             o
+        }
+        if (signalLevels == oldWifiSignalLevels && signalLevels.size > 2) {
+            if (DEBUG) Log.d(TAG, "onWiFisChanged(): WiFi signal levels unchanged, discarding scan results because they are likely outdated")
+            return
         }
         if (observations.isNotEmpty()) {
             if (DEBUG) Log.d(TAG, "onWiFisChanged(): ${observations.size} observations, ${observations.count { it.suspicious }} suspicious")
@@ -775,7 +784,7 @@ class BackendService : LocationBackendService() {
             if (activeMode && locations.isEmpty() && seenSet.isNotEmpty()) {
                 // Remove blacklisted emitters. They don't lead to a location, so we might not need to start GPS.
                 val emittersToUse = seenSet.filterNot { emitterCache?.simpleGet(it)?.status == EmitterStatus.STATUS_BLACKLISTED }
-                if (emittersToUse.isNotEmpty()) {
+                if (emittersToUse.isNotEmpty() && !activeModeStarters.containsAll(emittersToUse)) {
                     // determine accuracy values required to actually put the emitter into the database
                     val (shortRange, longRange) = emittersToUse.partition { it.rfType in shortRangeEmitterTypes }
                     val requiredAccuracyForGps = if (shortRange.isEmpty())
@@ -785,6 +794,9 @@ class BackendService : LocationBackendService() {
                             // but for short range emitters, getting one is enough
                             // reason: often the 7 m for 5 GHz WiFi take rather long, using more battery
                             shortRange.maxOf { it.rfType.getRfCharacteristics().minimumRange }
+                    // add emitters set of emitters that triggered active mode,
+                    // so next time the same emitters won't trigger GPS
+                    activeModeStarters.addAll(emittersToUse)
                     val intent = Intent(this, GpsMonitor::class.java)
                     intent.putExtra(ACTIVE_MODE_TIME, activeTimeout)
                     intent.putExtra(ACTIVE_MODE_ACCURACY, requiredAccuracyForGps.toFloat())
@@ -807,6 +819,7 @@ class BackendService : LocationBackendService() {
             }
         }
         if (locations.isEmpty()) return
+        if (activeMode) activeModeStarters.clear() // clear once we got a location
 
         // Estimate location using weighted average of the most recent
         // observations from the set of RF emitters we have seen. We cull

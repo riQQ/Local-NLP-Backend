@@ -1,5 +1,7 @@
 package org.fitchfamily.android.dejavu
 
+import java.util.*
+
 /*
 *    DejaVu - A location provider backend for microG/UnifiedNlp
 *
@@ -41,13 +43,13 @@ enum class EmitterType {
     TDSCDMA,
     LTE,
     NR,
-    NR_FR2, // frequency range 2, with typical range of few 100 meters
+    NR_FR2,
 }
 
 private const val METERS: Float = 1.0f
 private const val KM = METERS * 1000
 
-val shortRangeEmitterTypes = hashSetOf(EmitterType.WLAN5, EmitterType.WLAN6, EmitterType.WLAN2, EmitterType.BT)
+val shortRangeEmitterTypes: Set<EmitterType> = EnumSet.of(EmitterType.WLAN5, EmitterType.WLAN6, EmitterType.WLAN2, EmitterType.BT, EmitterType.NR_FR2)
 
 /**
  * Given an emitter type, return the various characteristics we need to know

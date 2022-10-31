@@ -209,7 +209,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
 
         // don't update location if there is more than 10 sec difference between last observation
         // and gps location (because we might have moved considerably during this time)
-        // this can occur e.g. if a wifi scan takes very long to complete or old scan results are reported
+        // this can occur e.g. if a WiFi scan takes very long to complete or old scan results are reported
+        // (maybe make time depend on RfCharacteristics and GPS speed, within some limits)
         if (abs((lastObservation?.elapsedRealtimeNanos ?: 0L) - gpsLoc.elapsedRealtimeNanos) > 10 * 1e9) {
             if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location and observation " +
                     "differ by more than 10s: ${((lastObservation?.elapsedRealtimeNanos ?: 0L) - gpsLoc.elapsedRealtimeNanos)/1e6}ms")

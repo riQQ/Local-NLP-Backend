@@ -13,6 +13,7 @@ import android.location.LocationManager
 import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import kotlinx.coroutines.*
 import org.fitchfamily.android.dejavu.BackendService.Companion.instanceGpsLocationUpdated
@@ -72,7 +73,7 @@ class GpsMonitor : Service(), LocationListener {
     private val notification by lazy {
         // before we can use the notification we need a channel on Oreo and above
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val notificationManager = NotificationManagerCompat.from(this)
             val channel = NotificationChannel(CHANNEL_ID , getString(R.string.pref_active_mode_title), NotificationManager.IMPORTANCE_LOW)
             notificationManager.createNotificationChannel(channel)
         }
