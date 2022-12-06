@@ -535,7 +535,7 @@ class BackendService : LocationBackendService() {
              * For some reason, timeStamp for cellInfo is like uptimeMillis (not advancing during sleep),
              * but wifi scanResult.timestamp is like elapsedRealtime (advancing during sleep).
              * Since we need the latter for location time, convert it!
-             * Focumentation is not clear about this, and actually indicates the latter... but
+             * Documentation is not clear about this, and actually indicates the latter... but
              * tests show it's the former.
              * From API30 there is timestampMillis, which is less weird but not available for lower APIs
              */

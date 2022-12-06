@@ -1,4 +1,3 @@
 <resources>
-    <string name="app_name">Local NLP Backend</string>
     <string name="summary">Un service de géolocalisation pour microG/Unified Network Location Provider utilisant une base de données privée stockée sur le téléphone de l\'utilisateur</string>
 </resources>

@@ -1,4 +1,3 @@
 <resources>
-    <string name="app_name">Local NLP Backend</string>
     <string name="summary">一个使用设备自带的 RF 射频信号发射器实现的 microG/UnifiedNlp 位置提供器</string>
 </resources>

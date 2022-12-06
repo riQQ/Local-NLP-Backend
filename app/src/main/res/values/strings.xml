@@ -1,5 +1,4 @@
 <resources>
-    <string name="app_name">Local NLP Backend</string>
     <string name="summary">A microG/UnifiedNlp location provider backend using private on phone RF emitter database</string>
 
     <!-- settings -->

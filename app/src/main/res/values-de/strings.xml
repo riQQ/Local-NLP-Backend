@@ -1,4 +1,3 @@
 <resources>
-    <string name="app_name">Local NLP Backend</string>
     <string name="summary">Ein microG/UnifiedNlp Standortdienst der eine private Datenbank der Mobilfunkstationen und WLANS benutzt</string>
 </resources>
