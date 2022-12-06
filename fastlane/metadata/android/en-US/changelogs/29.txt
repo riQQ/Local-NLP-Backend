@@ -1,0 +1,4 @@
+- Fix crashes
+- Upgrade to API 33
+- Add support for 5G and TDSCDMA cells
+- This is a beta version due to lack of devices using API 29+ or 5G / TDSCDMA, which means the new features haven't been tested

@@ -1,0 +1,1 @@
+- different application id for debug builds
