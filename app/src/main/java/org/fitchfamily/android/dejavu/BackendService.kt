@@ -795,17 +795,17 @@ class BackendService : LocationBackendService() {
                     val (shortRange, longRange) = emittersToUse.partition { it.rfType in shortRangeEmitterTypes }
                     val requiredAccuracyForGps = if (shortRange.isEmpty())
                             // ideally we want to locate all long range emitters
-                            longRange.minOf { it.rfType.getRfCharacteristics().minimumRange }
+                            longRange.minOf { it.rfType.getRfCharacteristics().requiredGpsAccuracy }
                         else
                             // but for short range emitters, getting one is enough
                             // reason: often the 7 m for 5 GHz WiFi take rather long, using more battery
-                            shortRange.maxOf { it.rfType.getRfCharacteristics().minimumRange }
+                            shortRange.maxOf { it.rfType.getRfCharacteristics().requiredGpsAccuracy }
                     // add emitters set of emitters that triggered active mode,
                     // so next time the same emitters won't trigger GPS
                     activeModeStarters.addAll(emittersToUse)
                     val intent = Intent(this, GpsMonitor::class.java)
                     intent.putExtra(ACTIVE_MODE_TIME, activeTimeout)
-                    intent.putExtra(ACTIVE_MODE_ACCURACY, requiredAccuracyForGps.toFloat())
+                    intent.putExtra(ACTIVE_MODE_ACCURACY, requiredAccuracyForGps)
                     intent.action = ACTIVE_MODE_ACTION
                     localBroadcastManager.sendBroadcast(intent)
                     if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - send intent to start GPS")

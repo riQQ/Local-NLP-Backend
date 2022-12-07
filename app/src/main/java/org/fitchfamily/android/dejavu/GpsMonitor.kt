@@ -128,7 +128,7 @@ class GpsMonitor : Service(), LocationListener {
         if (location.provider == LocationManager.GPS_PROVIDER) {
             instanceGpsLocationUpdated(location)
             if (gpsRunning?.isActive == true && location.accuracy <= targetAccuracy) {
-                if (DEBUG) Log.d(TAG, "onLocationChanged() - stopping GPS")
+                if (DEBUG) Log.d(TAG, "onLocationChanged() - target accuracy achieved (${location.accuracy} m), stopping GPS")
                 stopGps()
             }
         }
@@ -158,7 +158,7 @@ class GpsMonitor : Service(), LocationListener {
             if (DEBUG) Log.d(TAG, "getGpsPosition() - not starting GPS. GPS provider enabled: $gpsEnabled, GPS running: $gpsRunning")
             return
         }
-        if (DEBUG) Log.d(TAG, "getGpsPosition() - trying to start for $timeout ms")
+        if (DEBUG) Log.d(TAG, "getGpsPosition() - trying to start for $timeout ms with accuracy target $accuracy m")
         try {
             startForeground(NOTIFICATION_ID, notification)
             notification.`when` = System.currentTimeMillis()
