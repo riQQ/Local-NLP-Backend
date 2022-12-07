@@ -38,6 +38,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import kotlinx.coroutines.*
 import org.microg.nlp.api.LocationBackendService
 import org.microg.nlp.api.MPermissionHelperActivity
+import kotlin.math.abs
 
 /**
  * Created by tfitch on 8/27/17.
@@ -382,7 +383,7 @@ class BackendService : LocationBackendService() {
     @SuppressLint("MissingPermission")
     private fun getMobileTowers() {
         // todo: need to test it, but don't have Q or later
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && packageManager.hasSystemFeature(PackageManager.FEATURE_TELEPHONY_RADIO_ACCESS)) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             telephonyManager.requestCellInfoUpdate(mainExecutor, callInfoCallback!!)
             if (DEBUG) Log.d(TAG, "getMobileTowers(): requested cell info update")
             return
@@ -427,8 +428,7 @@ class BackendService : LocationBackendService() {
             if (DEBUG) Log.d(TAG, "processCellInfos() - using fallback mnc $m") // this triggers quite often... because some results are double with one having invalid mnc
             m
         }
-        val uptimeNanos = System.nanoTime()
-        val realtimeNanos = SystemClock.elapsedRealtimeNanos()
+        val nanoTime = System.nanoTime()
         for (info in newCells) {
             if (DEBUG) Log.v(TAG, "processCellInfos() - inputCellInfo: $info")
             val idStr: String
@@ -532,14 +532,20 @@ class BackendService : LocationBackendService() {
                 continue
             }
             /*
-             * For some reason, timeStamp for cellInfo is like uptimeMillis (not advancing during sleep),
-             * but wifi scanResult.timestamp is like elapsedRealtime (advancing during sleep).
-             * Since we need the latter for location time, convert it!
-             * Documentation is not clear about this, and actually indicates the latter... but
-             * tests show it's the former.
-             * From API30 there is timestampMillis, which is less weird but not available for lower APIs
+             * timeStamp for CellInfo is poorly documented, and thus may be either in uptimeMillis
+             * style (not advancing during sleep) or elapsedRealtimeMillis style (advancing during
+             * sleep). Thus for phones that don't have timeStampMillis (which always is realtime),
+             * we need to find out which style is correct. (both are indeed found in reality!)
              */
-            val o = Observation(idStr, type, asu, realtimeNanos - uptimeNanos + info.timeStamp)
+            val timestamp = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    info.timestampMillis * 1000000 // we want nanoseconds, but actually ns precision is not that important
+                } else {
+                    if (abs(info.timeStamp - nanoTime) < 1000000000L * 100L) // if difference < 100 s -> assume uptime
+                        SystemClock.elapsedRealtimeNanos() - nanoTime + info.timeStamp
+                    else
+                        info.timeStamp // else assume realtime
+                }
+            val o = Observation(idStr, type, asu, timestamp)
             observations.add(o)
             if (DEBUG) Log.d(TAG, "processCellInfos() - valid observation string: $idStr, asu $asu")
         }

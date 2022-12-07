@@ -1,1 +1,2 @@
 - different application id for debug builds
+- fix mobile emitters not being stored on some devices
