@@ -91,11 +91,13 @@ class BackendService : LocationBackendService() {
     //
     // Periodic process information.
     //
-    // We keep a set of the WiFi APs we expected to see and ones we've seen and then
-    // periodically adjust the trust. Ones we've seen we increment, ones we expected
-    // to see but didn't we decrement.
-    //
+    /** a set of emitters we've seen within the current processing period */
     private val seenSet = hashSetOf<RfIdentification>()
+    /**
+     * emitters from the previous processing period, to be used when GPS location is received
+     * soon after processing period finishes (especially useful for active mode and scan throttling)
+     */
+    private val oldEmitters = mutableListOf<RfIdentification>()
     private var emitterCache: Cache? = null
     /** when the next mobile scan may be started (measured in elapsedRealtime) */
     private var nextMobileScanTime: Long = 0
@@ -103,7 +105,8 @@ class BackendService : LocationBackendService() {
     private var nextWlanScanTime: Long = 0
     /** results of previous wifi scan by rfID */
     private var oldWifiSignalLevels = hashMapOf<String, Int>()
-    /** timestamp of the newest cell returned by the previous call to getAllCellInfo */
+    /** timestamp of the newest cell returned by the previous call to getAllCellInfo, used because
+     * newer Android version may return cached data, which we want to detect and discard */
     private var cellInfoTimestamp: Long = 0
     /** Filtered GPS (because GPS is so bad on Moto G4 Play) */
     private var kalmanGpsLocation: Kalman? = null
@@ -284,11 +287,19 @@ class BackendService : LocationBackendService() {
     @Synchronized
     private fun onGpsChanged(update: Location) {
         if (permissionsOkay && notNullIsland(update)) {
-            if (DEBUG) Log.d(TAG, "onGpsChanged(), accuracy ${update.accuracy}")
+            if (DEBUG) Log.d(TAG, "onGpsChanged() - accuracy ${update.accuracy}")
+            lastGpsOfThisPeriod = update
             if (useKalman)
                 kalmanGpsLocation?.update(update) ?: run { kalmanGpsLocation = Kalman(update, GPS_COORDINATE_NOISE) }
-            else
-                lastGpsOfThisPeriod = update
+            if (oldEmitters.isNotEmpty()) {
+                // If oldEmitters is not empty, we update the emitters using the new location.
+                // The time difference is checked as part of updating, so using too old emitters
+                // should not cause any issues with outdated data.
+                val location = if (useKalman) kalmanGpsLocation?.location?.apply { accuracy -= 1.5f }
+                    else update
+                if (DEBUG) Log.d(TAG, "onGpsChanged() - updating old emitters")
+                updateEmitters(oldEmitters.mapNotNull { emitterCache?.get(it) }, location)
+            }
             scanAllSensors()
         } else
             Log.d(TAG, "onGpsChanged() - Permissions not granted or location invalid, soft fail.")
@@ -770,16 +781,21 @@ class BackendService : LocationBackendService() {
      */
     private fun endOfPeriodProcessing() {
         if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - end of current period.")
-        oldKalmanUpdate = kalmanGpsLocation?.timeOfUpdate ?: 0L
-        lastGpsOfThisPeriod = null
-        if (settingsActivity != null) {
-            // only needed for reporting once, so we set it to null immediately
-            settingsActivity?.showEmitters(seenSet.map { emitterCache!![it] })
-            settingsActivity = null
-        }
-
         val locations: Collection<RfLocation>
+        oldEmitters.clear()
+
         synchronized(seenSet) {
+            if (lastGpsOfThisPeriod == null) // fill oldEmitters only if there was no GPS location
+                oldEmitters.addAll(seenSet)
+
+            oldKalmanUpdate = kalmanGpsLocation?.timeOfUpdate ?: 0L
+            lastGpsOfThisPeriod = null
+            if (settingsActivity != null) {
+                // only needed for reporting once, so we set it to null immediately
+                settingsActivity?.showEmitters(seenSet.map { emitterCache!![it] })
+                settingsActivity = null
+            }
+
             if (seenSet.isEmpty()) {
                 if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - no emitters seen.")
                 return
@@ -809,22 +825,26 @@ class BackendService : LocationBackendService() {
                     intent.action = ACTIVE_MODE_ACTION
                     localBroadcastManager.sendBroadcast(intent)
                     if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - send intent to start GPS")
-                }
+                } else if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - don't start GPS because we have no new valid emitters")
             }
 
             seenSet.clear() // Reset the RF emitters we've seen.
-
-            // Sync all of our changes to the on flash database in background
-            val oldBgJob = backgroundJob
-            if (DEBUG && backgroundJob.isActive)
-                // unexpected, but seen: see startProcessingPeriodIfNecessary for explanation
-                Log.d(TAG, "endOfPeriodProcessing() - background job is active, this is unexpected")
-            backgroundJob = scope.launch {
-                oldBgJob.join()
-                emitterCache!!.sync()
-            }
         }
-        if (locations.isEmpty()) return
+
+        // Sync all of our changes to the on flash database in background
+        val oldBgJob = backgroundJob
+        if (DEBUG && backgroundJob.isActive)
+            // unexpected, but seen: see startProcessingPeriodIfNecessary for explanation
+            Log.d(TAG, "endOfPeriodProcessing() - background job is active, this is unexpected")
+        backgroundJob = scope.launch {
+            oldBgJob.join()
+            emitterCache!!.sync()
+        }
+
+        if (locations.isEmpty()) {
+            if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - no location to report")
+            return
+        }
         if (activeMode) activeModeStarters.clear() // clear once we got a location
 
         // Estimate location using weighted average of the most recent
@@ -855,7 +875,7 @@ class BackendService : LocationBackendService() {
             // for some weird reason, reporting may (very rarely) take REALLY long, even minutes
             // this may be an issue of unifiedNLP instead of the backend... anyway, do it in background!
             scope.launch { report(weightedAverageLocation) }
-        } else if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - no location to report")
+        } else if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - determined location is null or nullIsland")
     }
 
     /**
