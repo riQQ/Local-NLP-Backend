@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Changed
 - different application id for debug builds
 - fix mobile emitters not being stored on some devices
+- improve storing/updating emitters, especially when using active mode
+- extend blacklist
 
 ## [1.2.2.beta.1] - 2022-10-11
 ### Added

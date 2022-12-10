@@ -126,11 +126,11 @@ class GpsMonitor : Service(), LocationListener {
      */
     override fun onLocationChanged(location: Location) {
         if (location.provider == LocationManager.GPS_PROVIDER) {
-            instanceGpsLocationUpdated(location)
             if (gpsRunning?.isActive == true && location.accuracy <= targetAccuracy) {
                 if (DEBUG) Log.d(TAG, "onLocationChanged() - target accuracy achieved (${location.accuracy} m), stopping GPS")
                 stopGps()
             }
+            instanceGpsLocationUpdated(location)
         }
     }
 
@@ -153,9 +153,9 @@ class GpsMonitor : Service(), LocationListener {
      * Try getting GPS location for a while. Will be stopped after a location with the target accuracy
      * is received or the timeout is over.
      */
-    fun getGpsPosition(timeout: Long, accuracy: Float) {
+    private fun getGpsPosition(timeout: Long, accuracy: Float) {
         if (!gpsEnabled || gpsRunning?.isActive == true) {
-            if (DEBUG) Log.d(TAG, "getGpsPosition() - not starting GPS. GPS provider enabled: $gpsEnabled, GPS running: $gpsRunning")
+            if (DEBUG) Log.d(TAG, "getGpsPosition() - not starting GPS. GPS provider enabled: $gpsEnabled, GPS running: ${gpsRunning?.isActive}")
             return
         }
         if (DEBUG) Log.d(TAG, "getGpsPosition() - trying to start for $timeout ms with accuracy target $accuracy m")

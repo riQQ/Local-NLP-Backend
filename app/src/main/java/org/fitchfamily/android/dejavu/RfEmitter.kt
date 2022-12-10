@@ -202,18 +202,24 @@ class RfEmitter(val type: EmitterType, val id: String) {
      */
     fun updateLocation(gpsLoc: Location) {
         if (status == EmitterStatus.STATUS_BLACKLISTED) return
-        if (lastObservation?.suspicious == true) {
+        val l = lastObservation ?: return // can't update emitters we haven't seen
+        if (l.suspicious) {
             if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because last observation is suspicious")
             return
         }
 
-        // don't update location if there is more than 10 sec difference between last observation
-        // and gps location (because we might have moved considerably during this time)
-        // this can occur e.g. if a WiFi scan takes very long to complete or old scan results are reported
-        // (maybe make time depend on RfCharacteristics and GPS speed, within some limits)
-        if (abs((lastObservation?.elapsedRealtimeNanos ?: 0L) - gpsLoc.elapsedRealtimeNanos) > 10 * 1e9) {
+        // Don't update location if there is more than 10 sec difference between last observation
+        // and gps location, or even less if we are moving really fast compared to the emitter range
+        // (because we might have moved considerably during this time).
+        // This can occur e.g. if a WiFi scan takes very long to complete or old scan results are reported
+        val tDiff = abs(l.elapsedRealtimeNanos - gpsLoc.elapsedRealtimeNanos) * 1e-9
+        val tDiffMax = if (gpsLoc.hasSpeed() && gpsLoc.speed > 0)
+                // time we need to move through half the maximum range, but at most 10s
+                (ourCharacteristics.maximumRange / 2 / gpsLoc.speed).coerceAtMost(10.0)
+            else 10.0
+        if (tDiff > tDiffMax) {
             if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location and observation " +
-                    "differ by more than 10s: ${((lastObservation?.elapsedRealtimeNanos ?: 0L) - gpsLoc.elapsedRealtimeNanos)/1e6}ms")
+                    "differ too much: ${(l.elapsedRealtimeNanos - gpsLoc.elapsedRealtimeNanos)/1e6}ms")
             return
         }
 
@@ -375,7 +381,8 @@ private const val TAG = "LocalNLP RfEmitter"
 private val splitRegex = "[^a-z]".toRegex() // for splitting SSID into "words"
 // use hashSets for fast blacklist*.contains() check
 private val blacklistWords = hashSetOf(
-    "android", "ipad", "iphone", "phone", "motorola", "huawei", // mobile tethering
+    "android", "ipad", "iphone", "phone", "motorola", "huawei", "nokia", "redmi", "realme",
+    "honor", "oppo", "galaxy", "mi", "oneplus", // mobile tethering
     "mobile", // sounds like name for mobile hotspot
     "deinbus", "ecolines", "eurolines", "fernbus", "flixbus", "muenchenlinie",
     "postbus", "skanetrafiken", "oresundstag", "regiojet", // transport
@@ -399,7 +406,7 @@ private val blacklistEquals = hashSetOf(
 )
 // and arrays if we just want to iterate
 private val blacklistStartsWith = arrayOf(
-    "moto ", "samsung galaxy", "lg aristo", "androidap", // mobile tethering
+    "moto ", "lg aristo", "androidap", // mobile tethering
     "cellspot", // T-Mobile US portable cell based WiFi
     "verizon", // Verizon mobile hotspot
 
