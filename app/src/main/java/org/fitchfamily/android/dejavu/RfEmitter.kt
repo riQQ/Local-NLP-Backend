@@ -326,6 +326,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 || lcSplit.contains("moto") && note.startsWith("MOTO") // "MOTO9564" and "MOTO9916" seen
                 || lcSplit.first() == "audi"            // some cars seem to have this AP on-board
                 || lc == macSuffix                      // Apparent default SSID name for many cars
+                || lcSplit.first() == "hotspotarriva"   // transport
                 // deal with words not achievable with the blacklist sets, checking only if
                 // lcSplit.contains(<something>) (for performance reasons)
                 || (lcSplit.contains("admin") && lc.contains("admin@ms"))
