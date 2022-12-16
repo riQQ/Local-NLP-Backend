@@ -276,7 +276,7 @@ class RfEmitter(val type: EmitterType, val id: String) {
 
             // Use time and asu based on most recent observation
             return RfLocation(observation.lastUpdateTimeMs, observation.elapsedRealtimeNanos,
-                cov.center_lat, cov.center_lon, radius, observation.asu, type, observation.suspicious)
+                cov.center_lat, cov.center_lon, radius, observation.asu, rfIdentification, observation.suspicious)
         }
 
     /**
@@ -326,7 +326,6 @@ class RfEmitter(val type: EmitterType, val id: String) {
                 || lcSplit.contains("moto") && note.startsWith("MOTO") // "MOTO9564" and "MOTO9916" seen
                 || lcSplit.first() == "audi"            // some cars seem to have this AP on-board
                 || lc == macSuffix                      // Apparent default SSID name for many cars
-                || lcSplit.first() == "hotspotarriva"   // transport
                 // deal with words not achievable with the blacklist sets, checking only if
                 // lcSplit.contains(<something>) (for performance reasons)
                 || (lcSplit.contains("admin") && lc.contains("admin@ms"))
@@ -383,10 +382,10 @@ private val splitRegex = "[^a-z]".toRegex() // for splitting SSID into "words"
 // use hashSets for fast blacklist*.contains() check
 private val blacklistWords = hashSetOf(
     "android", "ipad", "iphone", "phone", "motorola", "huawei", "nokia", "redmi", "realme",
-    "honor", "oppo", "galaxy", "mi", "oneplus", // mobile tethering
+    "honor", "oppo", "galaxy", "oneplus", // mobile tethering
     "mobile", // sounds like name for mobile hotspot
     "deinbus", "ecolines", "eurolines", "fernbus", "flixbus", "muenchenlinie",
-    "postbus", "skanetrafiken", "oresundstag", "regiojet", // transport
+    "postbus", "skanetrafiken", "oresundstag", "regiojet", "hotspotarriva", // transport
 
     // Per an instructional video on YouTube, recent (2014 and later) Chrysler-Fiat
     // vehicles have a SSID of the form "Chrysler uconnect xxxxxx" where xxxxxx
@@ -407,7 +406,7 @@ private val blacklistEquals = hashSetOf(
 )
 // and arrays if we just want to iterate
 private val blacklistStartsWith = arrayOf(
-    "moto ", "lg aristo", "androidap", // mobile tethering
+    "moto ", "lg aristo", "androidap", "vivo ", "mi ", // mobile tethering
     "cellspot", // T-Mobile US portable cell based WiFi
     "verizon", // Verizon mobile hotspot
 
@@ -455,10 +454,10 @@ data class RfLocation(
     val radius: Double,
     /** asu of most recent observation */
     val asu: Int,
-    val type: EmitterType,
+    val id: RfIdentification,
     /** whether we suspect the most recent observation might not be entirely correct */
     val suspicious: Boolean,
 ) {
     /** emitter radius, but at least minimumRange for this EmitterType */
-    val accuracyEstimate: Double = radius.coerceAtLeast(type.getRfCharacteristics().minimumRange)
+    val accuracyEstimate: Double = radius.coerceAtLeast(id.rfType.getRfCharacteristics().minimumRange)
 }

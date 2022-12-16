@@ -118,6 +118,8 @@ class BackendService : LocationBackendService() {
     private val localBroadcastManager by lazy { LocalBroadcastManager.getInstance(this) }
     /** emitters that recently triggered a GPS start in active mode */
     private val activeModeStarters = hashSetOf<RfIdentification>()
+    /** target accuracy for last start of active mode */
+    private var activeModeAccuracyTarget = 0f
 
     // settings that are read often, so better copy them here
     // setting changes propagate here because settingsFragment closes BackendService, and thus it's re-opened
@@ -125,8 +127,8 @@ class BackendService : LocationBackendService() {
     private var wifiScanEnabled = true
     private var mobileScanEnabled = true
     private var cull = 0
-    private var activeMode = false
-    private var activeTimeout = 0L
+    private var activeMode = 0
+    private var activeModeTimeout = 0L
 
     var settingsActivity: SettingsActivity? = null // crappy way for forwarding scan results
 
@@ -161,8 +163,10 @@ class BackendService : LocationBackendService() {
         wifiScanEnabled = prefs.getBoolean(PREF_WIFI, true)
         mobileScanEnabled = prefs.getBoolean(PREF_MOBILE, true)
         cull = prefs.getInt(PREF_CULL, 0)
-        activeMode = prefs.getBoolean(PREF_ACTIVE_MODE, false)
-        activeTimeout = (prefs.getString(PREF_ACTIVE_TIME, "10")?.toLongOrNull() ?: 10L) * 1000
+        // using strings instead of integers because this is android default
+        // directly using int is much more work in settings, so let's just be lazy...
+        activeMode = prefs.getString(PREF_ACTIVE_MODE, "0")?.toIntOrNull() ?: 0
+        activeModeTimeout = (prefs.getString(PREF_ACTIVE_TIME, "10")?.toLongOrNull() ?: 10L) * 1000
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             // Check our needed permissions, don't run unless we can.
@@ -393,14 +397,10 @@ class BackendService : LocationBackendService() {
      */
     @SuppressLint("MissingPermission")
     private fun getMobileTowers() {
-        // todo: need to test it, but don't have Q or later
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             telephonyManager.requestCellInfoUpdate(mainExecutor, callInfoCallback!!)
             if (DEBUG) Log.d(TAG, "getMobileTowers(): requested cell info update")
             return
-            // todo: really return and trust Android to do the callback?
-            //  or just go ahead and get the cell info?
-            //  can anything worse happen than one of the 2 calls to processCellInfos returning because of old data?
         }
 
         // Try recent API to get all cell information, or fall back to deprecated method
@@ -787,6 +787,8 @@ class BackendService : LocationBackendService() {
         synchronized(seenSet) {
             if (lastGpsOfThisPeriod == null) // fill oldEmitters only if there was no GPS location
                 oldEmitters.addAll(seenSet)
+            else if (activeMode != 0 && (lastGpsOfThisPeriod?.accuracy ?: 0f) < activeModeAccuracyTarget)
+                activeModeStarters.clear() // clear activeModeStarters if we have a GPS location of the required accuracy
 
             oldKalmanUpdate = kalmanGpsLocation?.timeOfUpdate ?: 0L
             lastGpsOfThisPeriod = null
@@ -802,30 +804,11 @@ class BackendService : LocationBackendService() {
             }
             locations = getRfLocations(seenSet)
 
-            // start GPS if we found emitters, but none has a valid location
-            if (activeMode && locations.isEmpty() && seenSet.isNotEmpty()) {
-                // Remove blacklisted emitters. They don't lead to a location, so we might not need to start GPS.
-                val emittersToUse = seenSet.filterNot { emitterCache?.simpleGet(it)?.status == EmitterStatus.STATUS_BLACKLISTED }
-                if (emittersToUse.isNotEmpty() && !activeModeStarters.containsAll(emittersToUse)) {
-                    // determine accuracy values required to actually put the emitter into the database
-                    val (shortRange, longRange) = emittersToUse.partition { it.rfType in shortRangeEmitterTypes }
-                    val requiredAccuracyForGps = if (shortRange.isEmpty())
-                            // ideally we want to locate all long range emitters
-                            longRange.minOf { it.rfType.getRfCharacteristics().requiredGpsAccuracy }
-                        else
-                            // but for short range emitters, getting one is enough
-                            // reason: often the 7 m for 5 GHz WiFi take rather long, using more battery
-                            shortRange.maxOf { it.rfType.getRfCharacteristics().requiredGpsAccuracy }
-                    // add emitters set of emitters that triggered active mode,
-                    // so next time the same emitters won't trigger GPS
-                    activeModeStarters.addAll(emittersToUse)
-                    val intent = Intent(this, GpsMonitor::class.java)
-                    intent.putExtra(ACTIVE_MODE_TIME, activeTimeout)
-                    intent.putExtra(ACTIVE_MODE_ACCURACY, requiredAccuracyForGps)
-                    intent.action = ACTIVE_MODE_ACTION
-                    localBroadcastManager.sendBroadcast(intent)
-                    if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - send intent to start GPS")
-                } else if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - don't start GPS because we have no new valid emitters")
+            // start GPS if wanted by active mode setting
+            if (activeMode != 0 && seenSet.isNotEmpty()) {
+                val validEmitters = seenSet.filterNot { emitterCache?.simpleGet(it)?.status == EmitterStatus.STATUS_BLACKLISTED }
+                if (validEmitters.isNotEmpty())
+                    startActiveMode(locations, validEmitters)
             }
 
             seenSet.clear() // Reset the RF emitters we've seen.
@@ -845,7 +828,12 @@ class BackendService : LocationBackendService() {
             if (DEBUG) Log.d(TAG, "endOfPeriodProcessing() - no location to report")
             return
         }
-        if (activeMode) activeModeStarters.clear() // clear once we got a location
+
+        // clear activeModeStarters if we have a location of the most precise type required
+        // this will clear too often for aggressive setting, but in aggressive mode battery drain is expected anyway
+        if (activeMode != 0 && activeModeStarters.isNotEmpty()
+                && locations.minOf { it.id.rfType.getRfCharacteristics().requiredGpsAccuracy } <= activeModeAccuracyTarget)
+            activeModeStarters.clear()
 
         // Estimate location using weighted average of the most recent
         // observations from the set of RF emitters we have seen. We cull
@@ -904,6 +892,73 @@ class BackendService : LocationBackendService() {
         val locations = rfIds.mapNotNull { emitterCache!![it].location }
         if (DEBUG) Log.d(TAG, "getRfLocations() - returning ${locations.size} locations for ${rfIds.size} emitters")
         return locations
+    }
+
+    /** Start active mode dependent on the settings. [emitters] must not be empty. */
+    private fun startActiveMode(locations: Collection<RfLocation>, emitters: Collection<RfIdentification>) {
+        if (DEBUG) Log.d(TAG, "startActiveMode() - determine whether GPS should be started, setting: $activeMode")
+
+        val (shortRangeEmitters, longRangeEmitters) = emitters.partition { it.rfType in shortRangeEmitterTypes }
+        val (shortRangeLocations, longRangeLocations) = locations.partition { it.id.rfType in shortRangeEmitterTypes }
+
+        // determine which emitters are used to start active mode, depending on active mode setting
+        val emittersToUse: Collection<RfIdentification>
+        when (activeMode) {
+            1 -> { // all emitters, but only if we have no location
+                if (locations.isNotEmpty()) {
+                    if (DEBUG) Log.d(TAG, "startActiveMode() - not starting GPS because we have a location")
+                    return
+                }
+                emittersToUse = emitters
+            }
+            2, 3 -> { // all short range emitters plus unknown long range emitters, but only if we have no short range location
+                if (shortRangeLocations.isNotEmpty()) {
+                    if (DEBUG) Log.d(TAG, "startActiveMode() - not starting GPS because we have a short range location")
+                    return
+                }
+                val longRangeLocationEmitters = HashSet<RfIdentification>(longRangeLocations.size)
+                longRangeLocations.forEach { longRangeLocationEmitters.add(it.id) }
+                emittersToUse = shortRangeEmitters + longRangeEmitters.filterNot { it in longRangeLocationEmitters }
+            }
+            4 -> { // all unknown emitters
+                val locationEmitters = HashSet<RfIdentification>(locations.size)
+                locations.forEach { locationEmitters.add(it.id) }
+                emittersToUse = emitters.filterNot { it in locationEmitters }
+            }
+            else -> {
+                if (DEBUG) Log.d(TAG, "startActiveMode() - not starting GPS because we have an invalid active mode setting")
+                return
+            }
+        }
+        // do nothing if all emitters were already used to start active mode recently
+        if (emittersToUse.isEmpty() || activeModeStarters.containsAll(emittersToUse)) {
+            if (DEBUG) Log.d(TAG, "startActiveMode() - not starting GPS because we have no emitters to use (${emittersToUse.isEmpty()}) or we recently started GPS all found emitters (${activeModeStarters.containsAll(emittersToUse)})")
+            return
+        }
+        activeModeStarters.addAll(emittersToUse)
+
+        // now we want to start active mode -> need to determine our target accuracy
+        activeModeAccuracyTarget = when (activeMode) {
+            1, 2 -> { // try to conserve battery by not aiming for highest accuracy
+                if (shortRangeEmitters.isEmpty())
+                    // in this case, emittersToUse contains only long range emitters that didn't provide a location
+                    emittersToUse.minOf { it.rfType.getRfCharacteristics().requiredGpsAccuracy }
+                else
+                    shortRangeEmitters.maxOf { it.rfType.getRfCharacteristics().requiredGpsAccuracy }
+            }
+            3, 4 -> emittersToUse.minOf { it.rfType.getRfCharacteristics().requiredGpsAccuracy }
+            else -> {
+                if (DEBUG) Log.d(TAG, "startActiveMode() - not starting GPS because we have an invalid active mode setting")
+                return
+            }
+        }
+
+        val intent = Intent(this, GpsMonitor::class.java)
+        intent.putExtra(ACTIVE_MODE_TIME, activeModeTimeout)
+        intent.putExtra(ACTIVE_MODE_ACCURACY, activeModeAccuracyTarget)
+        intent.action = ACTIVE_MODE_ACTION
+        if (DEBUG) Log.d(TAG, "startActiveMode() - send intent to start GPS because of emitters $emittersToUse")
+        localBroadcastManager.sendBroadcast(intent)
     }
 
     companion object {

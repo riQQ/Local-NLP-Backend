@@ -112,7 +112,7 @@ fun culledEmitters(locations: Collection<RfLocation>): Set<RfLocation>? {
     val groups = divideInGroups(locations)
     groups.maxByOrNull { it.size }?.let { result ->
         // if we only have one location, use it as long as it's not an invalid emitter
-        if (locations.size == 1 && result.single().type != EmitterType.INVALID) {
+        if (locations.size == 1 && result.single().id.rfType != EmitterType.INVALID) {
             if (DEBUG) Log.d(TAG, "culledEmitters() - got only one location, use it")
             return result
         }
@@ -120,11 +120,11 @@ fun culledEmitters(locations: Collection<RfLocation>): Set<RfLocation>? {
         // The RfEmitter class will have put the min count into the location
         // it provided.
         result.forEach {
-            if (result.size >= it.type.getRfCharacteristics().minCount)
+            if (result.size >= it.id.rfType.getRfCharacteristics().minCount)
                 return result
         }
         if (DEBUG) Log.d(TAG, "culledEmitters() - only got ${result.size}, but " +
-                "${result.minOfOrNull { it.type.getRfCharacteristics().minCount }} are required")
+                "${result.minOfOrNull { it.id.rfType.getRfCharacteristics().minCount }} are required")
     }
     return null
 }
@@ -190,7 +190,7 @@ fun Collection<RfLocation>.weightedAverage(): Location {
     forEachIndexed { i, it ->
         latitudes[i] = it.lat
         longitudes[i] = it.lon
-        val minRange = it.type.getRfCharacteristics().minimumRange
+        val minRange = it.id.rfType.getRfCharacteristics().minimumRange
         // significantly reduce asu if we don't really trust the location, but don't discard it
         val asu = if (it.suspicious) (it.asu / 4).coerceAtLeast(MINIMUM_ASU) else it.asu
         weights[i] = asu / it.accuracyEstimate
@@ -216,15 +216,15 @@ fun Collection<RfLocation>.weightedAverage(): Location {
     val latMean = weightedMean(latitudes, weights)
     val lonMean = weightedMean(longitudes, weights)
     // and variances, to use for accuracy
-    val hasWifi = any { it.type in shortRangeEmitterTypes }
+    val hasWifi = any { it.id.rfType in shortRangeEmitterTypes }
     val latVariance = weightedVariance(latMean, latitudes, accuracies, weights, hasWifi)
     val lonVariance = weightedVariance(lonMean, longitudes, accuracies, weights, hasWifi)
     val acc = (sqrt(latVariance + lonVariance) * DEG_TO_METER)
     // seen weirdly bad results if only 1 emitter is available, and we only have seen it in
     // very few locations -> need to catch this
     // similar if all WiFis are suspicious... don't trust it
-    val allWifisSuspicious = hasWifi && none { !it.suspicious && it.type in shortRangeEmitterTypes }
-    val reportAcc = acc * if (allWifisSuspicious || (size == 1 && first().radius < single().type.getRfCharacteristics().minimumRange))
+    val allWifisSuspicious = hasWifi && none { !it.suspicious && it.id.rfType in shortRangeEmitterTypes }
+    val reportAcc = acc * if (allWifisSuspicious || (size == 1 && first().radius < single().id.rfType.getRfCharacteristics().minimumRange))
         1.5 else 1.0 // factor 1.5 to approximately undo the factor 0.7 above
     return location(latMean, lonMean, reportAcc.toFloat())
 }
@@ -289,10 +289,10 @@ fun Collection<RfLocation>.medianCull(): Collection<RfLocation>? {
     // if we have less than 3 results, also use suspicious results
     // if we still have less than 3 results, use all
     // 3 results because with less there is a too high chance of bad median locations (see below)
-    val emittersForMedian = filter { it.type in shortRangeEmitterTypes && !it.suspicious }
+    val emittersForMedian = filter { it.id.rfType in shortRangeEmitterTypes && !it.suspicious }
         .let { goodList ->
             if (goodList.size >= 3) goodList
-            else this.filter { it.type in shortRangeEmitterTypes }
+            else this.filter { it.id.rfType in shortRangeEmitterTypes }
                 .let { okList ->
                     if (okList.size >= 3) okList
                     else this
@@ -336,7 +336,7 @@ fun Collection<RfLocation>.medianCullSafe(): Location? {
     if (d > medianCullLoc.accuracy
         || d > noCullLoc.accuracy
         || medianCull.size <= size * 0.8
-        || (medianCull.none { it.type in shortRangeEmitterTypes } && this.any { it.type in shortRangeEmitterTypes })
+        || (medianCull.none { it.id.rfType in shortRangeEmitterTypes } && this.any { it.id.rfType in shortRangeEmitterTypes })
     ) {
         // we have a potentially bad location -> check normal cull and no cull and compare
         val normalCullLoc = culledEmitters(this)?.weightedAverage()

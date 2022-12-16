@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="pref_active_mode_entries">
+        <item>@string/pref_active_mode_off</item>
+        <item>@string/pref_active_mode_low</item>
+        <item>@string/pref_active_mode_medium</item>
+        <item>@string/pref_active_mode_high</item>
+        <item>@string/pref_active_mode_aggressive</item>
+    </string-array>
+
+    <string-array name="pref_active_mode_entryvalues" translatable="false">
+        <item>"0"</item>
+        <item>"1"</item>
+        <item>"2"</item>
+        <item>"3"</item>
+        <item>"4"</item>
+    </string-array>
+</resources>

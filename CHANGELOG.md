@@ -14,12 +14,17 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Removed
 - Not applicable
 
-## [1.2.2] - 2022-xx-xx
+## [1.2.3] - 2022-12-16
 ### Changed
-- different application id for debug builds
-- fix mobile emitters not being stored on some devices
-- improve storing/updating emitters, especially when using active mode
-- extend blacklist
+- Extend blacklist
+- Allow more aggressive active mode settings: fill the database better, but may increase battery use
+
+## [1.2.2] - 2022-12-11
+### Changed
+- Different application id for debug builds
+- Fix mobile emitters not being stored on some devices
+- Improve storing/updating emitters, especially when using active mode
+- Extend blacklist
 
 ## [1.2.2.beta.1] - 2022-10-11
 ### Added

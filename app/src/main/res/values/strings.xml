@@ -16,7 +16,12 @@
     <string name="pref_use_wlan_title">Use WiFi locations</string>
     <string name="pref_use_wlan_summary">When disabled, WiFi scans will not happen</string>
     <string name="pref_active_mode_title">Active mode</string>
-    <string name="pref_active_mode_summary">Enables GPS when emitters were found, but no location could be determined</string>
+    <string name="pref_active_mode_summary">Enable GPS when unknown emitters are found (to fill up the database)</string>
+    <string name="pref_active_mode_off">Off</string>
+    <string name="pref_active_mode_low">Low - Enable GPS only when emitters are found, but no location could be determined at all</string>
+    <string name="pref_active_mode_medium">Medium - Also enable GPS when WiFi emitters were found, but none of them could be used to determine a location</string>
+    <string name="pref_active_mode_high">High - Like above, but require better GPS accuracy (to store 5 GHz WiFis)</string>
+    <string name="pref_active_mode_aggressive">Aggressive - Enable GPS when unknown emitters are found. Very likely to cause excessive battery drain</string>
     <string name="pref_active_time_title">Active mode GPS timeout</string>
     <string name="active_mode_active">Active mode: GPS on</string>
     <string name="pref_show_emitters_title">Show nearby emitters</string>

@@ -1,0 +1,2 @@
+- Extend blacklist
+- Allow more aggressive active mode settings: fill the database better, but may increase battery use

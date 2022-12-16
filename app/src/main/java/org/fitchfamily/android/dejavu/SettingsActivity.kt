@@ -538,7 +538,7 @@ const val PREF_CULL = "pref_cull"
 const val PREF_IMPORT = "pref_import"
 const val PREF_EXPORT = "pref_export"
 const val PREF_SHOW_EMITTERS = "pref_show_emitters"
-const val PREF_ACTIVE_MODE = "pref_active_mode"
+const val PREF_ACTIVE_MODE = "pref_active_mode2"
 const val PREF_ACTIVE_TIME = "pref_active_time"
 
 private const val MLS = "radio,mcc,net,area,cell,unit,lon,lat,range,samples,changeable,created,updated,averageSignal"

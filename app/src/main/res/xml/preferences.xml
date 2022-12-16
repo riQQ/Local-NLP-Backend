@@ -17,11 +17,14 @@
         android:title="@string/pref_use_wlan_title"
         android:summary="@string/pref_use_wlan_summary"
         android:defaultValue="true" />
-    <SwitchPreference
-        android:key="pref_active_mode"
+    <ListPreference
+        android:key="pref_active_mode2"
         android:title="@string/pref_active_mode_title"
         android:summary="@string/pref_active_mode_summary"
-        android:defaultValue="false" />
+        android:entries="@array/pref_active_mode_entries"
+        android:entryValues="@array/pref_active_mode_entryvalues"
+        android:defaultValue="0"
+        android:persistent="true" />
     <EditTextPreference
         android:key="pref_active_time"
         android:title="@string/pref_active_time_title"
