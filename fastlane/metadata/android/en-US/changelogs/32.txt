@@ -1,0 +1,2 @@
+- Fix not (properly) asking for background location, resulting in no location permissions being asked on Android 11+
+- Update microG NLP API and other dependencies

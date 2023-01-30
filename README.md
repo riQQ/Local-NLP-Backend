@@ -17,6 +17,14 @@ This version has several changes compared to *Déjà Vu*, see the [changelog](CH
 Aside from upgrades incorporating recent Android versions, an "active mode" was added, which can be used to build up the database at the cost of some battery.
 Local NLP Backend is capable of using and importing any database used in *Déjà Vu*, but be aware that you need root privileges to extract the database.
 
+Potential improvements
+======================
+Local NLP Backend works mostly fine as it is, but there are some areas where it could be improved:
+* characteristics for the various different emitters are roughly estimated from various sources on the internet. Fine tuning of the values might improve location accuracy, especially when also considering frequency effects on range.
+* make use of bluetooth emitters. Bluetooth has low range and thus a good potential of giving accurate locations, but is difficult to use properly as many bluetooth emitters are mobile.
+* make use of [WiFi-RTT](https://developer.android.com/guide/topics/connectivity/wifi-rtt) for distance estimation. This has the potential to vastly improve precision, but works only on a small number of devices.
+* determination of position from found emitters is just working "good enough", but not great. A different approach might yield better results.
+
 Requirements on phone
 =====================
 This is a plug-in for [microG](https://microg.org/) (UnifiedNlp or GmsCore).

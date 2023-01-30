@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Removed
 - Not applicable
 
+## [1.2.4] - 2023-01-30
+### Changed
+- Fix not (properly) asking for background location, resulting in no location permissions being asked on Android 11+
+- Update microG NLP API and other dependencies
+
 ## [1.2.3] - 2022-12-16
 ### Changed
 - Extend blacklist

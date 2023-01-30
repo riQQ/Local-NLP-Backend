@@ -71,6 +71,9 @@ class BackendService : LocationBackendService() {
         }
     }
     private val telephonyManager: TelephonyManager by lazy { getSystemService(TELEPHONY_SERVICE) as TelephonyManager }
+
+    // this causes java.lang.NoClassDefFoundError messages on start with Android 9 and lower,
+    // but there are no further issues
     private val callInfoCallback = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q)
         null
     else
