@@ -27,13 +27,16 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.SystemClock
 import android.preference.PreferenceManager
 import android.telephony.*
 import android.telephony.cdma.CdmaCellLocation
 import android.telephony.gsm.GsmCellLocation
 import android.util.Log
+import android.widget.Toast
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import kotlinx.coroutines.*
 import org.microg.nlp.api.LocationBackendService
@@ -225,6 +228,22 @@ class BackendService : LocationBackendService() {
             // them to be granted.
             if (perms.isEmpty()) return null
             val intent = Intent(this, MPermissionHelperActivity::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && perms.contains(permission.ACCESS_BACKGROUND_LOCATION)) {
+                /* Newer Android versions make things annoying: we need to ask for location WITHOUT
+                 * background location first, and then background location separately. Otherwise
+                 * the permissions are automatically denied without informing the user.
+                 * Luckily there is some weird behavior in microG: The module gets disabled immediately
+                 * after asking for location permissions. Thus we can ask for background permission
+                 * when the user (hopefully) tries to enable the module a second time.
+                 * Maybe this is intentional from microG for this reason?
+                 */
+                if (perms.size > 1) // remove background location if we also ask for other permissions
+                    perms.remove(permission.ACCESS_BACKGROUND_LOCATION)
+                else // ask for background location only, and make toast to explain why we ask a second time
+                    Handler(Looper.getMainLooper()).post { // see https://stackoverflow.com/a/66385775
+                        Toast.makeText(applicationContext, R.string.background_location_permission_toast, Toast.LENGTH_LONG).show()
+                    }
+            }
             intent.putExtra(MPermissionHelperActivity.EXTRA_PERMISSIONS, perms.toTypedArray())
             return intent
         }
