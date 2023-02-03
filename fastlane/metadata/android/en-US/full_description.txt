@@ -1,6 +1,6 @@
 The backend passively monitors the GPS and scans for nearby WiFis and mobile cells/towers. From this a database of emitter locations is created.
 When UnifiedNlp / microG request a location from Local NLP Backend, a scan for nearby emitter is initiated and a location determined based on the scan results.
-Local NLP Backend is a fork of the Déjà Vu NLP Backend with some improvements and some crude UI for configuration and importing / exporting data.
+Local NLP Backend is a fork of the Déjà Vu NLP Backend with some improvements and some crude UI for configuration and importing / exporting data, including cell lists from MLS or OpenCelliD.
 
 This backend uses no network data.
 All data acquired by the phone stays on the phone, though it can be exported manually.

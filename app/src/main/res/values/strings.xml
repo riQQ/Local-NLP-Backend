@@ -38,7 +38,7 @@ Current setting: %s
     <string name="pref_cull_median">Median</string>
     <string name="pref_cull_none">Use all</string>
     <string name="pref_import_title">Import data</string>
-    <string name="pref_import_summary">Select CSV created from export, Déjà Vu / Local NLP Backend database or MLS cell export</string>
+    <string name="pref_import_summary">Select CSV created from export, Déjà Vu / Local NLP Backend database or MLS / OpenCelliD csv list</string>
     <string name="import_error_format">Error: file format unknown</string>
     <string name="import_error_line">Error parsing line %s</string>
     <string name="import_error_database">Error importing database: %s</string>
@@ -47,7 +47,7 @@ Current setting: %s
     <string name="import_keep">Keep local emitters unchanged</string>
     <string name="import_merge">Merge emitters</string>
     <string name="import_mls_use_type">Use %s</string>
-    <string name="import_mls_title">Import from MLS file</string>
+    <string name="import_mls_title">Import from csv file</string>
     <string name="import_mls_country_code_message">Enter country codes to import, comma separated. Leave blank to import all.</string>
     <string name="import_title">Importing…</string>
     <string name="import_canceled">Import canceled, no changes made</string>
