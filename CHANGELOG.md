@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Removed
 - Not applicable
 
+## [1.2.5] - 2023-02-10
+### Changed
+- Fix MLS import not working without MCC filter
+- Support placeholder for simplified MCC filtering
+- Fix bugs when importing files
+- Clarify that OpenCelliD files can be used too, as the format is same as MLS
+- Switch from Light theme to DayNight theme
+
 ## [1.2.4] - 2023-01-30
 ### Changed
 - Fix not (properly) asking for background location, resulting in no location permissions being asked on Android 11+

@@ -1,0 +1,5 @@
+- Fix MLS import not working without MCC filter
+- Support placeholder for simplified MCC filtering
+- Fix bugs when importing files
+- Clarify that OpenCelliD files can be used too, as the format is same as MLS
+- Switch from Light theme to DayNight theme
