@@ -56,7 +56,7 @@ internal class Cache(context: Context?) {
      * all the emitters we are working with.
      */
     private val workingSet = hashMapOf<String, RfEmitter>()
-    private var db: Database? = Database(context)
+    private var db: Database? = Database.instance ?: Database(context)
 
     /**
      * Release all resources associated with the cache. If the cache is

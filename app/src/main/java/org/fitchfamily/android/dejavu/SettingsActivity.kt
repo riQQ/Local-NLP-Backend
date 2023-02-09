@@ -23,6 +23,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
+import android.content.DialogInterface
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
@@ -38,6 +39,7 @@ import android.provider.OpenableColumns
 import android.util.Log
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
+import androidx.core.widget.doAfterTextChanged
 import kotlinx.coroutines.*
 import java.io.File
 
@@ -86,6 +88,12 @@ class SettingsActivity : PreferenceActivity() {
                 onOpen()
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (BackendService.instance == null)
+            Database.instance?.close()
     }
 
     private fun onClickCull() {
@@ -148,8 +156,8 @@ class SettingsActivity : PreferenceActivity() {
         val collisionKeep = SQLiteDatabase.CONFLICT_IGNORE
         val collisionMerge = 0
 
-        fun readFromFile(collision: Int, readFormat: Int, mlsIgnoreTypes: Set<String>, mlsCountryCodes: Set<String>) {
-            val db = Database(this)
+        fun readFromFile(collision: Int, readFormat: Int, mlsIgnoreTypes: Set<String>, mlsCountryCodes: Set<String>?) {
+            val db = Database.instance ?: Database(this)
             var importJob: Job? = null
             var i = 0
             var j = 0
@@ -166,10 +174,7 @@ class SettingsActivity : PreferenceActivity() {
             importJob = scope.launch(Dispatchers.IO) {
                 db.beginTransaction()
                 reader.useLines {
-                    val iter = it.iterator()
-                    var line: String
-                    while (iter.hasNext()) {
-                        line = iter.next()
+                    for (line in it) {
                         try {
                             val splitLine = parseLine(line, readFormat, mlsIgnoreTypes, mlsCountryCodes)
                             if (splitLine == null) j++
@@ -195,15 +200,19 @@ class SettingsActivity : PreferenceActivity() {
                                 }
                             }
                         } catch (e: Exception) {
-                            db.cancelTransaction()
-                            Log.w(TAG, "import / readFromFile - error parsing line $line", e)
+                            // don't break if lines can't be read, just notify in Toast
+                            j++
+                            Log.w(TAG, "import / readFromFile - error parsing line ${i + j}: $line", e)
                             runOnUiThread { Toast.makeText(sa, getString(R.string.import_error_line, line), Toast.LENGTH_LONG).show() }
-                            break
                         }
                     }
                 }
+                runOnUiThread {
+                    dialog.setMessage(getString(R.string.import_finishing))
+                    // disable cancel button, the actual db write may take a while
+                    dialog.getButton(DialogInterface.BUTTON_NEGATIVE).isEnabled = false
+                }
                 db.endTransaction()
-                db.close()
                 inputStream.close()
                 dialog.dismiss()
                 runOnUiThread { Toast.makeText(sa, R.string.import_done, Toast.LENGTH_LONG).show() }
@@ -211,7 +220,7 @@ class SettingsActivity : PreferenceActivity() {
         }
 
         fun readFromDatabase(collision: Int) {
-            val db = Database(this)
+            val db = Database.instance ?: Database(this)
             val dbFile = File(this.applicationInfo.dataDir + File.separator + "databases" + File.separator + "tmp.db")
             dbFile.delete()
             dbFile.parentFile?.mkdirs()
@@ -244,7 +253,6 @@ class SettingsActivity : PreferenceActivity() {
                             runOnUiThread { dialog.setMessage("$i / $max") }
                             if (!coroutineContext.isActive) {
                                 db.cancelTransaction()
-                                db.close()
                                 otherDb.endTransaction()
                                 otherDb.close()
                                 dbFile.delete()
@@ -256,14 +264,11 @@ class SettingsActivity : PreferenceActivity() {
                     otherDb.close()
                 } catch (e: Exception) {
                     Log.w(TAG, "import / readFromDatabase - error", e)
-                    // todo: got a crash here because we are not in a transaction - which actually is checked... wtf?
-                    //  happened by: import, cancel (using dialog cancel), import again -> couldn't reproduce
                     db.cancelTransaction()
                     runOnUiThread { Toast.makeText(sa, getString(R.string.import_error_database, e.message), Toast.LENGTH_LONG).show() }
                 }
                 db.endTransaction()
                 dbFile.delete()
-                db.close()
                 dialog.dismiss()
                 runOnUiThread { Toast.makeText(sa, R.string.import_done, Toast.LENGTH_LONG).show() }
             }
@@ -332,19 +337,23 @@ class SettingsActivity : PreferenceActivity() {
                 addView(countryCodes)
                 setPadding(30, 10, 30, 10)
             }
-            AlertDialog.Builder(this)
+            val d = AlertDialog.Builder(this)
                 .setTitle(R.string.import_mls_title)
                 .setView(layout)
                 .setPositiveButton(android.R.string.ok) { _, _ ->
                     if (!gsmBox.isChecked) mlsIgnoreTypes.add("GSM")
                     if (!umtsBox.isChecked) mlsIgnoreTypes.add("UMTS")
                     if (!lteBox.isChecked) mlsIgnoreTypes.add("LTE")
-                    mlsCountryCodes.addAll(
-                        countryCodes.text.toString().split(',').map { it.trim() })
-                    readFromFile(collision, readFormat, mlsIgnoreTypes, mlsCountryCodes)
+                    mlsCountryCodes.addAll(parseCountryCodes(countryCodes.text.toString()))
+                    readFromFile(collision, readFormat, mlsIgnoreTypes, mlsCountryCodes.takeIf { it.isNotEmpty() })
                 }
                 .setNegativeButton(android.R.string.cancel, null)
-                .show()
+                .create()
+            val mcc = "[xX\\d]{3}".toRegex()
+            countryCodes.doAfterTextChanged {
+                d.getButton(DialogInterface.BUTTON_POSITIVE).isEnabled = it.toString().split(",").all { it.isBlank() || it.trim().matches(mcc) }
+            }
+            d.show()
         }
 
         AlertDialog.Builder(this)
@@ -358,10 +367,10 @@ class SettingsActivity : PreferenceActivity() {
     }
 
     /** converts the line to the 7 required entries for putting in DB */
-    private fun parseLine(line: String, readFormat: Int, mlsIgnoreTypes: Set<String>, mlsCountryCodes: Set<String>): List<String>? {
+    private fun parseLine(line: String, readFormat: Int, mlsIgnoreTypes: Set<String>, mlsCountryCodes: Set<String>?): List<String>? {
         var splitLine = line.split(',')
-        if (readFormat == 0) { // MLS cell export
-            if (splitLine.first() in mlsIgnoreTypes || splitLine[1] !in mlsCountryCodes) return null
+        if (readFormat == 0) { // MLS / OpenCelliD list
+            if (splitLine.size < 10 || splitLine.first() in mlsIgnoreTypes || mlsCountryCodes?.contains(splitLine[1]) == false) return null
             val rfid = when (splitLine.first()) {
                 "GSM" -> "GSM/${splitLine[1]}/${splitLine[2]}/${splitLine[3]}/${splitLine[4]}" // GSM,202,0,42,26363 -> GSM/202/0/42/26363
                 "UMTS" -> "WCDMA/${splitLine[1]}/${splitLine[2]}/${splitLine[3]}/${splitLine[4]}" // UMTS,202,0,6060,4655229 -> WCDMA/202/0/6060/4655229
@@ -380,11 +389,30 @@ class SettingsActivity : PreferenceActivity() {
         return splitLine
     }
 
+    /** creates a list from comma-separated MCCs, expanding x to 0-9 */
+    private fun parseCountryCodes(codes: String): List<String> {
+        fun String.expandX(): List<String> {
+            val list = mutableListOf<List<String>>()
+            if (contains('x') || contains('X')) {
+                for (i in 0..9) {
+                    list.add(replaceFirst("x", i.toString(), true).expandX())
+                }
+            } else list.add(listOf(this))
+            return list.flatten()
+        }
+
+        val code = "[xX\\d]{3}".toRegex() // actually check is not necessary, but better be safe
+        return codes.split(',').mapNotNull {
+            val c = it.trim()
+            if (c.matches(code)) c.expandX() else null
+        }.flatten()
+    }
+
     private fun exportToFile(uri: Uri) {
         val outputStream = contentResolver?.openOutputStream(uri) ?: return
         val os = outputStream.bufferedWriter()
         BackendService.instance?.onClose()
-        val db = Database(this)
+        val db = Database.instance ?: Database(this)
         var exportJob: Job? = null
         val max = db.getSize()
         val dialogBuilder = AlertDialog.Builder(this)
@@ -411,7 +439,6 @@ class SettingsActivity : PreferenceActivity() {
                         runOnUiThread { dialog.setMessage("$i / $max") }
                         if (!coroutineContext.isActive) {
                             db.cancelTransaction()
-                            db.close()
                             os.close()
                             return@launch
                         }
@@ -423,7 +450,6 @@ class SettingsActivity : PreferenceActivity() {
             }
             db.endTransaction()
             os.close()
-            db.close()
             runOnUiThread { Toast.makeText(sa, R.string.export_done, Toast.LENGTH_LONG).show() }
             dialog.dismiss()
             outputStream.close()
@@ -455,14 +481,13 @@ class SettingsActivity : PreferenceActivity() {
         }
     }
 
-    // todo: also show asu (convert it to some percentage value or 5 steps...)
     @SuppressLint("SetTextI18n") // we want to concatenate the text string, requiring resource strings for emitter ids doesn't make sense
     fun showEmitters(emitters: Collection<RfEmitter>) = runOnUiThread {
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         var d: AlertDialog? = null
-        val database = Database(this)
+        val db = Database.instance ?: Database(this)
         emitters.sortedBy { it.uniqueId }.forEach { emitter ->
-            val emitterInDb = database.getEmitter(emitter.rfIdentification) != null
+            val emitterInDb = db.getEmitter(emitter.rfIdentification) != null
             val t = TextView(this).apply { text = emitter.uniqueId + (if (emitter.note.isNotBlank()) ", ${emitter.note}" else "") }
             t.setOnClickListener {
                 val text = listOfNotNull(
@@ -473,6 +498,7 @@ class SettingsActivity : PreferenceActivity() {
                     getString(R.string.show_scan_details_emitter_center, emitter.lat, emitter.lon),
                     getString(R.string.show_scan_details_emitter_radius_ew, emitter.radiusEW),
                     getString(R.string.show_scan_details_emitter_radius_ns, emitter.radiusNS),
+                    emitter.lastObservation?.let { getString(R.string.show_scan_details_emitter_signal, (it.asu + 4) / 6) },
                     if (emitter.status == EmitterStatus.STATUS_BLACKLISTED) getString(R.string.show_scan_details_emitter_blacklisted) else null,
                     if (!emitterInDb) getString(R.string.show_scan_details_emitter_not_in_db) else null,
                 ).joinToString("\n")
@@ -482,10 +508,8 @@ class SettingsActivity : PreferenceActivity() {
                     .setPositiveButton(android.R.string.ok, null)
                 if (emitterInDb && emitter.status != EmitterStatus.STATUS_BLACKLISTED)
                     b.setNegativeButton(R.string.show_scan_details_emitter_blacklist) { _, _ ->
-                        val db = Database(this)
                         db.setInvalid(emitter)
                         BackendService.resetCache()
-                        db.close()
                         d?.dismiss()
                     }
                 b.show()
@@ -499,10 +523,8 @@ class SettingsActivity : PreferenceActivity() {
                 AlertDialog.Builder(this)
                     .setTitle(getString(R.string.show_scan_emitter_delete, emitter.uniqueId))
                     .setPositiveButton(R.string.show_scan_emitter_delete_confirm) { _, _ ->
-                        val db = Database(this)
                         db.drop(emitter)
                         BackendService.resetCache()
-                        db.close()
                         d?.dismiss()
                     }
                     .setNegativeButton(android.R.string.cancel, null)
@@ -515,7 +537,6 @@ class SettingsActivity : PreferenceActivity() {
             }
             layout.addView(l)
         }
-        database.close()
         layout.setPadding(30,10,30,10)
         d = AlertDialog.Builder(this)
             .setTitle(R.string.show_scan_results)
@@ -538,7 +559,7 @@ const val PREF_CULL = "pref_cull"
 const val PREF_IMPORT = "pref_import"
 const val PREF_EXPORT = "pref_export"
 const val PREF_SHOW_EMITTERS = "pref_show_emitters"
-const val PREF_ACTIVE_MODE = "pref_active_mode2"
+const val PREF_ACTIVE_MODE = "pref_active_mode2" // old one was boolean, and thus can't re re-used after switch to int
 const val PREF_ACTIVE_TIME = "pref_active_time"
 
 private const val MLS = "radio,mcc,net,area,cell,unit,lon,lat,range,samples,changeable,created,updated,averageSignal"

@@ -46,9 +46,10 @@ Current setting: %s
     <string name="import_replace">Replace local emitters</string>
     <string name="import_keep">Keep local emitters unchanged</string>
     <string name="import_merge">Merge emitters</string>
+    <string name="import_finishing">Updating database…</string>
     <string name="import_mls_use_type">Use %s</string>
     <string name="import_mls_title">Import from csv file</string>
-    <string name="import_mls_country_code_message">Enter country codes to import, comma separated. Leave blank to import all.</string>
+    <string name="import_mls_country_code_message">Enter country codes (MCC) to import, comma separated. Use "x" as placeholder for digits 0–9. Leave blank to import all.</string>
     <string name="import_title">Importing…</string>
     <string name="import_canceled">Import canceled, no changes made</string>
     <string name="import_number_progress">%1$d imported, %2$d skipped</string>
@@ -62,6 +63,7 @@ Current setting: %s
     <string name="show_scan_details_emitter_center">Center: latitude %1$.5f, longitude %2$.5f</string>
     <string name="show_scan_details_emitter_radius_ew">Width east-west: %.2f m</string>
     <string name="show_scan_details_emitter_radius_ns">Width north-south: %.2f m</string>
+    <string name="show_scan_details_emitter_signal">Signal: %d / 5</string>
     <string name="show_scan_details_emitter_blacklisted">This emitter is blacklisted</string>
     <string name="show_scan_details_emitter_not_in_db">This emitter is not in the database</string>
     <string name="show_scan_details_emitter_blacklist">Blacklist this emitter</string>

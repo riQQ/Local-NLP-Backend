@@ -247,6 +247,14 @@ class Database(context: Context?, name: String = DB_NAME) : // allow overriding 
 
     override fun onOpen(db: SQLiteDatabase) {
         super.onOpen(db)
+        if (databaseName == DB_NAME)
+            instance = this
+    }
+
+    override fun close() {
+        if (databaseName == DB_NAME)
+            instance = null
+        super.close()
     }
 
     /**
@@ -415,6 +423,11 @@ class Database(context: Context?, name: String = DB_NAME) : // allow overriding 
     fun getAll() = query(allColumns) { it.toRfEmitter() }
 
     fun getSize() = DatabaseUtils.queryNumEntries(database, TABLE_SAMPLES)
+
+    companion object {
+        var instance: Database? = null
+            private set
+    }
 }
 
 private const val TAG = "LocalNLP DB"
