@@ -978,6 +978,10 @@ class BackendService : LocationBackendService() {
         val intent = Intent(this, GpsMonitor::class.java)
         intent.putExtra(ACTIVE_MODE_TIME, activeModeTimeout)
         intent.putExtra(ACTIVE_MODE_ACCURACY, activeModeAccuracyTarget)
+        val reasonEmitter = emitterCache!![emittersToUse.minBy { it.rfType.getRfCharacteristics().requiredGpsAccuracy }]
+        val emitterText = if (reasonEmitter.note.isBlank()) reasonEmitter.uniqueId
+            else "${reasonEmitter.type} ${reasonEmitter.note}"
+        intent.putExtra(ACTIVE_MODE_TEXT, getString(R.string.active_mode_active, emitterText, emittersToUse.size))
         intent.action = ACTIVE_MODE_ACTION
         if (DEBUG) Log.d(TAG, "startActiveMode() - send intent to start GPS because of emitters $emittersToUse")
         localBroadcastManager.sendBroadcast(intent)

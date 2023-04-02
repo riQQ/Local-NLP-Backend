@@ -66,27 +66,28 @@ class GpsMonitor : Service(), LocationListener {
             if (DEBUG) Log.d(TAG, "onReceive() - received intent")
             val time = intent?.extras?.getLong(ACTIVE_MODE_TIME) ?: return
             val accuracy = intent.extras?.getFloat(ACTIVE_MODE_ACCURACY) ?: return
-            getGpsPosition(time, accuracy)
+            val text = intent.extras?.getString(ACTIVE_MODE_TEXT) ?: return
+            getGpsPosition(time, accuracy, text)
         }
     }
+
     // without notification, gps will only run in if app in in foreground (i.e. in settings)
-    private val notification by lazy {
-        // before we can use the notification we need a channel on Oreo and above
+    private fun getNotification(text: String) =
+        NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setPriority(NotificationCompat.PRIORITY_LOW) // only relevant for API < 28
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text)) // necessary for line breaks
+            .build()
+
+    override fun onCreate() {
+        Log.d(TAG, "onCreate()")
+        // before we can use the notification, we need a channel on Oreo and above
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val notificationManager = NotificationManagerCompat.from(this)
             val channel = NotificationChannel(CHANNEL_ID , getString(R.string.pref_active_mode_title), NotificationManager.IMPORTANCE_LOW)
             notificationManager.createNotificationChannel(channel)
         }
 
-        NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(getString(R.string.active_mode_active))
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-    }
-
-    override fun onCreate() {
-        Log.d(TAG, "onCreate()")
         monitoring = try {
             locationManager.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER, GPS_SAMPLE_TIME, GPS_SAMPLE_DISTANCE, this)
             true
@@ -153,13 +154,14 @@ class GpsMonitor : Service(), LocationListener {
      * Try getting GPS location for a while. Will be stopped after a location with the target accuracy
      * is received or the timeout is over.
      */
-    private fun getGpsPosition(timeout: Long, accuracy: Float) {
+    private fun getGpsPosition(timeout: Long, accuracy: Float, notificationText: String) {
         if (!gpsEnabled || gpsRunning?.isActive == true) {
             if (DEBUG) Log.d(TAG, "getGpsPosition() - not starting GPS. GPS provider enabled: $gpsEnabled, GPS running: ${gpsRunning?.isActive}")
             return
         }
         if (DEBUG) Log.d(TAG, "getGpsPosition() - trying to start for $timeout ms with accuracy target $accuracy m")
         try {
+            val notification = getNotification(notificationText)
             startForeground(NOTIFICATION_ID, notification)
             notification.`when` = System.currentTimeMillis()
             gpsLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, GPS_SAMPLE_TIME, GPS_SAMPLE_DISTANCE, this)
@@ -202,5 +204,6 @@ class GpsMonitor : Service(), LocationListener {
 const val ACTIVE_MODE_TIME = "time"
 const val ACTIVE_MODE_ACCURACY = "accuracy"
 const val ACTIVE_MODE_ACTION = "start_gps"
+const val ACTIVE_MODE_TEXT = "text"
 private const val NOTIFICATION_ID = 76593265 // does it matter?
 private const val CHANNEL_ID = "gps_active"
