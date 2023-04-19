@@ -37,6 +37,7 @@ import android.preference.PreferenceActivity
 import android.preference.PreferenceManager
 import android.provider.OpenableColumns
 import android.util.Log
+import android.view.WindowManager
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.core.widget.doAfterTextChanged
@@ -173,6 +174,8 @@ class SettingsActivity : PreferenceActivity() {
             val sa = this
             importJob = scope.launch(Dispatchers.IO) {
                 db.beginTransaction()
+                runOnUiThread { window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+                var success = true
                 reader.useLines {
                     for (line in it) {
                         try {
@@ -196,6 +199,7 @@ class SettingsActivity : PreferenceActivity() {
                                 runOnUiThread { dialog.setMessage(getString(R.string.import_number_progress, i, j)) }
                                 if (!coroutineContext.isActive) {
                                     db.cancelTransaction()
+                                    success = false
                                     break
                                 }
                             }
@@ -215,7 +219,9 @@ class SettingsActivity : PreferenceActivity() {
                 db.endTransaction()
                 inputStream.close()
                 dialog.dismiss()
-                runOnUiThread { Toast.makeText(sa, R.string.import_done, Toast.LENGTH_LONG).show() }
+                if (success)
+                    runOnUiThread { Toast.makeText(sa, R.string.import_done, Toast.LENGTH_LONG).show() }
+                runOnUiThread { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
             }
         }
 
@@ -236,6 +242,7 @@ class SettingsActivity : PreferenceActivity() {
             val dialog = dialogBuilder.show()
             val sa = this
             importJob = scope.launch(Dispatchers.IO) {
+                runOnUiThread { window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
                 dbFile.outputStream().use { inputStream.copyTo(it) }
                 inputStream.close()
                 try {
@@ -256,6 +263,7 @@ class SettingsActivity : PreferenceActivity() {
                                 otherDb.endTransaction()
                                 otherDb.close()
                                 dbFile.delete()
+                                runOnUiThread { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
                                 return@launch
                             }
                         }
@@ -271,6 +279,7 @@ class SettingsActivity : PreferenceActivity() {
                 dbFile.delete()
                 dialog.dismiss()
                 runOnUiThread { Toast.makeText(sa, R.string.import_done, Toast.LENGTH_LONG).show() }
+                runOnUiThread { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
             }
         }
 
@@ -350,8 +359,8 @@ class SettingsActivity : PreferenceActivity() {
                 .setNegativeButton(android.R.string.cancel, null)
                 .create()
             val mcc = "[xX\\d]{3}".toRegex()
-            countryCodes.doAfterTextChanged {
-                d.getButton(DialogInterface.BUTTON_POSITIVE).isEnabled = it.toString().split(",").all { it.isBlank() || it.trim().matches(mcc) }
+            countryCodes.doAfterTextChanged { cc ->
+                d.getButton(DialogInterface.BUTTON_POSITIVE).isEnabled = cc.toString().split(",").all { it.isBlank() || it.trim().matches(mcc) }
             }
             d.show()
         }
@@ -426,6 +435,8 @@ class SettingsActivity : PreferenceActivity() {
         val dialog = dialogBuilder.show()
         val sa = this
         exportJob = scope.launch(Dispatchers.IO) {
+            runOnUiThread { window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+            var success = true
             try {
                 os.write("database v4\n")
                 os.write("${COL_RFID},${COL_TYPE},${COL_LAT},${COL_LON},${COL_RAD_NS},${COL_RAD_EW},${COL_NOTE}\n")
@@ -447,12 +458,15 @@ class SettingsActivity : PreferenceActivity() {
             } catch (e: Exception) {
                 Log.i(TAG, "exportToFile - error", e)
                 runOnUiThread { Toast.makeText(sa, getString(R.string.export_error, e.message), Toast.LENGTH_LONG).show() }
+                success = false
             }
             db.endTransaction()
             os.close()
-            runOnUiThread { Toast.makeText(sa, R.string.export_done, Toast.LENGTH_LONG).show() }
+            if (success)
+                runOnUiThread { Toast.makeText(sa, R.string.export_done, Toast.LENGTH_LONG).show() }
             dialog.dismiss()
             outputStream.close()
+            runOnUiThread { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
         }
     }
 

@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Changed
 - Not applicable
-- Notification text for active mode now contains name of emitter that triggered the scan 
+- Notification text for active mode now contains name of emitter that triggered the scan
+- Keep screen on during import / export operations
 
 ### Removed
 - Not applicable

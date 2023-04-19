@@ -71,7 +71,7 @@ class GpsMonitor : Service(), LocationListener {
         }
     }
 
-    // without notification, gps will only run in if app in in foreground (i.e. in settings)
+    // without notification, gps will only run in if app is in foreground (i.e. in settings)
     private fun getNotification(text: String) =
         NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
