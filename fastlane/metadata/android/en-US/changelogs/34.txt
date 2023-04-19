@@ -1,0 +1,2 @@
+- Notification text for active mode now contains name of emitter that triggered the scan
+- Keep screen on during import / export operations

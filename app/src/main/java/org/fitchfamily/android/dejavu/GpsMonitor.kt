@@ -135,6 +135,7 @@ class GpsMonitor : Service(), LocationListener {
         }
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onStatusChanged(provider: String, status: Int, extras: Bundle) {
         Log.d(TAG, "onStatusChanged() - provider $provider, status $status")
     }
@@ -190,7 +191,10 @@ class GpsMonitor : Service(), LocationListener {
     private fun stopGps() {
         gpsLocationManager.removeUpdates(this)
         gpsRunning?.cancel()
-        stopForeground(true)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N)
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        else
+            stopForeground(true)
     }
 
     companion object {

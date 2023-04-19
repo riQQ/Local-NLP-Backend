@@ -988,6 +988,7 @@ class BackendService : LocationBackendService() {
     }
 
     companion object {
+        private const val TAG = "LocalNLP Backend"
         var instance: BackendService? = null
             private set
 
@@ -1070,7 +1071,6 @@ private const val GPS_COORDINATE_NOISE = 2.0 // reduced from initial 3.0 to get 
 
 private val DEBUG = BuildConfig.DEBUG
 
-private const val TAG = "LocalNLP Backend"
 private val myPerms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
     arrayOf(
         permission.ACCESS_WIFI_STATE, permission.CHANGE_WIFI_STATE,
