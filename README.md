@@ -11,14 +11,19 @@ This backend uses no network data. All data acquired by the phone stays on the p
 <a href="https://f-droid.org/packages/helium314.localbackend/" target="_blank">
 <img src="https://f-droid.org/badge/get-it-on.png" alt="Get it on F-Droid" height="90"/></a>
 
-Modified version
-================
-This version has several changes compared to *Déjà Vu*, see the [changelog](CHANGELOG.md) starting at 1.2.0-beta.
-Aside from upgrades incorporating recent Android versions, an "active mode" was added, which can be used to build up the database at the cost of some battery.
-Local NLP Backend is capable of using and importing any database used in *Déjà Vu*, but be aware that you need root privileges to extract the database.
-CSV files from MLS or OpenCellID can also be imported, and filtered by country code.
+See the [changelog](CHANGELOG.md) starting at 1.2.0-beta for a full list of changes starting from last version of *Déjà Vu*.
 
-Potential improvements
+How to use
+==========
+Local NLP Backend can be used like *Déjà Vu*: just enable the backend and let it build up the database by frequently having GPS enabled, e.g. using a map app.
+If you have a *Déjà Vu* database (you'll need root privileged to extract it), it can be imported in LocalNLP. Further import options are databases exported by LocalNLP, and cell csv files from MLS or OpenCelliD.
+Note that the local database needs to be filled either using GPS or by importing data, before LocalNLP can provide locations!
+
+In order to speed up building the database, LocalNLP has an optional active mode that enabled GPS when there is no known emitter nearby (low setting) or when any unknown emitter is found (aggressive setting).
+
+On [some Android versions](https://developer.android.com/guide/topics/connectivity/wifi-scan#wifi-scan-throttling), the ability to perform WiFi scans is severely limited. LocalNLP does not have control over this, and is limited by the specified background app limit.
+
+Potential improvements not yet implemented
 ======================
 Local NLP Backend works mostly fine as it is, but there are some areas where it could be improved:
 * characteristics for the various different emitters are roughly estimated from various sources on the internet. Fine tuning of the values might improve location accuracy, especially when also considering frequency effects on range.
@@ -41,7 +46,8 @@ Note: The microG configuration check requires a location from a location backend
 
 Collecting RF Emitter Data
 ======================
-To conserve power the collection process does not actually turn on the GPS. If some other app turns on the GPS, for example a map or navigation app, then the backend will monitor the location and collect RF emitter data.
+To conserve power the collection process by default does not actually turn on the GPS. If some other app turns on the GPS, for example a map or navigation app, then the backend will monitor the location and collect RF emitter data.
+Alternatively you can enable active mode in the settings available via microG backend configuration.
 
 What is stored in the database
 ------------------------------

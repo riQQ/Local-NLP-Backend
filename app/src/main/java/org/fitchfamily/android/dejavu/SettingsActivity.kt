@@ -479,10 +479,21 @@ class SettingsActivity : PreferenceActivity() {
 
         // request location, because backendService may not be running
         val lm = applicationContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        // what if network provider doesn't exist? see https://github.com/Helium314/Local-NLP-Backend/issues/12#issuecomment-1518894136
+        // try fused provider, though not sure whether this would help
+        val provider = if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER))
+                LocationManager.NETWORK_PROVIDER
+            else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && lm.isProviderEnabled(LocationManager.FUSED_PROVIDER))
+                LocationManager.FUSED_PROVIDER
+            else null
+        if (provider == null) {
+            Toast.makeText(this, R.string.show_scan_no_network_provider, Toast.LENGTH_LONG).show()
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
-            lm.getCurrentLocation(LocationManager.NETWORK_PROVIDER, null, {  }, {  })
+            lm.getCurrentLocation(provider, null, {  }, {  })
         else
-            lm.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, { }, null)
+            lm.requestSingleUpdate(provider, { }, null)
 
         try {
             runBlocking { withTimeout(3500) {

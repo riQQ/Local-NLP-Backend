@@ -69,6 +69,7 @@ Current setting: %s
     <string name="show_scan_details_emitter_blacklist">Blacklist this emitter</string>
     <string name="show_scan_emitter_delete">Delete emitter %s?</string>
     <string name="show_scan_emitter_delete_confirm">Delete</string>
+    <string name="show_scan_no_network_provider">Network location provider not available</string>
 
     <!-- other -->
     <string name="background_location_permission_toast">Please enable Local NLP Backend again so it may ask for background location permission</string>
