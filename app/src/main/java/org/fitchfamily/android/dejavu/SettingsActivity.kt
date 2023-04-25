@@ -28,7 +28,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
-import android.graphics.Color
+import android.graphics.Color.TRANSPARENT
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
@@ -37,6 +37,7 @@ import android.preference.PreferenceActivity
 import android.preference.PreferenceManager
 import android.provider.OpenableColumns
 import android.util.Log
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.*
 import androidx.appcompat.app.AlertDialog
@@ -47,12 +48,23 @@ import java.io.File
 // deprecated, but replacement is annoying to handle...
 class SettingsActivity : PreferenceActivity() {
 
-    private var settingsChanged = false
     private val prefs: SharedPreferences by lazy { PreferenceManager.getDefaultSharedPreferences(this) }
-    private val listener = SharedPreferences.OnSharedPreferenceChangeListener {_, key ->
-        settingsChanged = true
+    private val listener = SharedPreferences.OnSharedPreferenceChangeListener {_, _ ->
+        if (!importExportRunning) // actually changing settings shouldn't be possible, as a dialog is showing
+            BackendService.instance?.reloadSettings()
     }
     private val scope = CoroutineScope(SupervisorJob())
+    private var importExportRunning = false
+        set(value) {
+            if (value) {
+                BackendService.instance?.pause()
+                BackendService.resetCache()
+            } else {
+                BackendService.instance?.reloadSettings()
+                BackendService.resetCache()
+            }
+            field = value
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,16 +95,8 @@ class SettingsActivity : PreferenceActivity() {
     override fun onPause() {
         super.onPause()
         prefs.unregisterOnSharedPreferenceChangeListener(listener)
-        if (settingsChanged) {
-            BackendService.instance?.apply {
-                onClose()
-                onOpen()
-            }
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
+        if (!importExportRunning) // avoid unpausing the backend while database is used
+            BackendService.instance?.reloadSettings()
         if (BackendService.instance == null)
             Database.instance?.close()
     }
@@ -159,6 +163,7 @@ class SettingsActivity : PreferenceActivity() {
 
         fun readFromFile(collision: Int, readFormat: Int, mlsIgnoreTypes: Set<String>, mlsCountryCodes: Set<String>?) {
             val db = Database.instance ?: Database(this)
+            importExportRunning = true
             var importJob: Job? = null
             var i = 0
             var j = 0
@@ -222,11 +227,13 @@ class SettingsActivity : PreferenceActivity() {
                 if (success)
                     runOnUiThread { Toast.makeText(sa, R.string.import_done, Toast.LENGTH_LONG).show() }
                 runOnUiThread { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+                importExportRunning = false
             }
         }
 
         fun readFromDatabase(collision: Int) {
             val db = Database.instance ?: Database(this)
+            importExportRunning = true
             val dbFile = File(this.applicationInfo.dataDir + File.separator + "databases" + File.separator + "tmp.db")
             dbFile.delete()
             dbFile.parentFile?.mkdirs()
@@ -264,6 +271,7 @@ class SettingsActivity : PreferenceActivity() {
                                 otherDb.close()
                                 dbFile.delete()
                                 runOnUiThread { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+                                importExportRunning = false
                                 return@launch
                             }
                         }
@@ -278,13 +286,15 @@ class SettingsActivity : PreferenceActivity() {
                 db.endTransaction()
                 dbFile.delete()
                 dialog.dismiss()
-                runOnUiThread { Toast.makeText(sa, R.string.import_done, Toast.LENGTH_LONG).show() }
-                runOnUiThread { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+                runOnUiThread {
+                    Toast.makeText(sa, R.string.import_done, Toast.LENGTH_LONG).show()
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+                importExportRunning = false
             }
         }
 
         fun import(collision: Int) {
-            BackendService.instance?.onClose()
             val isDatabaseFile = if (uri.toString().startsWith("file:")) {
                 uri.toString().endsWith(".db")
             } else {
@@ -420,7 +430,7 @@ class SettingsActivity : PreferenceActivity() {
     private fun exportToFile(uri: Uri) {
         val outputStream = contentResolver?.openOutputStream(uri) ?: return
         val os = outputStream.bufferedWriter()
-        BackendService.instance?.onClose()
+        importExportRunning = true
         val db = Database.instance ?: Database(this)
         var exportJob: Job? = null
         val max = db.getSize()
@@ -451,6 +461,7 @@ class SettingsActivity : PreferenceActivity() {
                         if (!coroutineContext.isActive) {
                             db.cancelTransaction()
                             os.close()
+                            importExportRunning = false
                             return@launch
                         }
                     }
@@ -467,6 +478,7 @@ class SettingsActivity : PreferenceActivity() {
             dialog.dismiss()
             outputStream.close()
             runOnUiThread { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+            importExportRunning = false
         }
     }
 
@@ -476,6 +488,7 @@ class SettingsActivity : PreferenceActivity() {
             && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
         )
             return // do nothing, this means the user actively denied location access
+        BackendService.instance?.reloadSettings() // unpause if necessary
 
         // request location, because backendService may not be running
         val lm = applicationContext.getSystemService(Context.LOCATION_SERVICE) as LocationManager
@@ -520,31 +533,31 @@ class SettingsActivity : PreferenceActivity() {
                     if (emitter.type == EmitterType.WLAN2 || emitter.type == EmitterType.WLAN5)
                         getString(R.string.show_scan_details_emitter_ssid, emitter.note)
                     else null,
-                    getString(R.string.show_scan_details_emitter_center, emitter.lat, emitter.lon),
-                    getString(R.string.show_scan_details_emitter_radius_ew, emitter.radiusEW),
-                    getString(R.string.show_scan_details_emitter_radius_ns, emitter.radiusNS),
+                    if (emitterInDb) getString(R.string.show_scan_details_emitter_center, emitter.lat, emitter.lon) else null,
+                    if (emitterInDb) getString(R.string.show_scan_details_emitter_radius_ew, emitter.radiusEW) else null,
+                    if (emitterInDb) getString(R.string.show_scan_details_emitter_radius_ns, emitter.radiusNS) else null,
                     emitter.lastObservation?.let { getString(R.string.show_scan_details_emitter_signal, (it.asu + 4) / 6) },
                     if (emitter.status == EmitterStatus.STATUS_BLACKLISTED) getString(R.string.show_scan_details_emitter_blacklisted) else null,
                     if (!emitterInDb) getString(R.string.show_scan_details_emitter_not_in_db) else null,
                 ).joinToString("\n")
-                val b = AlertDialog.Builder(this)
+                val builder = AlertDialog.Builder(this)
                     .setTitle(getString(R.string.show_scan_details_emitter, emitter.uniqueId))
                     .setMessage(text)
                     .setPositiveButton(android.R.string.ok, null)
                 if (emitterInDb && emitter.status != EmitterStatus.STATUS_BLACKLISTED)
-                    b.setNegativeButton(R.string.show_scan_details_emitter_blacklist) { _, _ ->
+                    builder.setNegativeButton(R.string.show_scan_details_emitter_blacklist) { _, _ ->
                         db.setInvalid(emitter)
                         BackendService.resetCache()
                         d?.dismiss()
                     }
-                b.show()
+                builder.show()
             }
-            val b = Button(this).apply {
-                setBackgroundColor(Color.TRANSPARENT)
-                if (emitterInDb) setBackgroundResource(android.R.drawable.ic_delete)
-                isEnabled = emitterInDb
-            }
-            b.setOnClickListener {
+            val deleteButton = Button(this)
+            deleteButton.setBackgroundColor(TRANSPARENT)
+            deleteButton.setPadding(0, -15, 0, 0)
+            if (emitterInDb) deleteButton.setBackgroundResource(android.R.drawable.ic_delete)
+            deleteButton.isEnabled = emitterInDb
+            deleteButton.setOnClickListener {
                 AlertDialog.Builder(this)
                     .setTitle(getString(R.string.show_scan_emitter_delete, emitter.uniqueId))
                     .setPositiveButton(R.string.show_scan_emitter_delete_confirm) { _, _ ->
@@ -555,12 +568,11 @@ class SettingsActivity : PreferenceActivity() {
                     .setNegativeButton(android.R.string.cancel, null)
                     .show()
             }
-            val l = LinearLayout(this).apply {
+            layout.addView(LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                addView(b)
+                addView(deleteButton)
                 addView(t)
-            }
-            layout.addView(l)
+            })
         }
         layout.setPadding(30,10,30,10)
         d = AlertDialog.Builder(this)

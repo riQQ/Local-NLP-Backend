@@ -164,16 +164,7 @@ class BackendService : LocationBackendService() {
             }.apply()
         }
 
-        // take care to use default values from preferences.xml
-        useKalman = prefs.getBoolean(PREF_KALMAN, false)
-        wifiScanEnabled = prefs.getBoolean(PREF_WIFI, true)
-        mobileScanEnabled = prefs.getBoolean(PREF_MOBILE, true)
-        cull = prefs.getInt(PREF_CULL, 0)
-        // using strings instead of integers because this is android default
-        // directly using int is much more work in settings, so let's just be lazy...
-        activeMode = prefs.getString(PREF_ACTIVE_MODE, "0")?.toIntOrNull() ?: 0
-        activeModeTimeout = (prefs.getString(PREF_ACTIVE_TIME, "10")?.toLongOrNull() ?: 10L) * 1000
-
+        reloadSettings()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             // Check our needed permissions, don't run unless we can.
             for (s in myPerms) {
@@ -268,6 +259,28 @@ class BackendService : LocationBackendService() {
             Log.d(TAG, "update() - Permissions not granted, soft fail.")
         }
         return null
+    }
+
+    /** reloads settings from shared preferences */
+    fun reloadSettings() {
+        // take care to use default values from preferences.xml
+        useKalman = prefs.getBoolean(PREF_KALMAN, false)
+        wifiScanEnabled = prefs.getBoolean(PREF_WIFI, true)
+        mobileScanEnabled = prefs.getBoolean(PREF_MOBILE, true)
+        cull = prefs.getInt(PREF_CULL, 0)
+        // using strings instead of integers because this is android default
+        // directly using int is much more work in settings, so let's just be lazy...
+        activeMode = prefs.getString(PREF_ACTIVE_MODE, "0")?.toIntOrNull() ?: 0
+        activeModeTimeout = (prefs.getString(PREF_ACTIVE_TIME, "10")?.toLongOrNull() ?: 10L) * 1000
+    }
+
+    /** stops scans until settings are reloaded, used when database is used by settings */
+    fun pause() {
+        wifiScanEnabled = false
+        mobileScanEnabled = false
+        backgroundJob.cancel()
+        wifiJob.cancel()
+        mobileJob.cancel()
     }
 
     //
