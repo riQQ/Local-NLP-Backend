@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Removed
 - Not applicable
 
+## [1.2.7] - 2023-04-25
+### Changed
+- Crash fix
+- Small UI changes when viewing nearby emitters and emitter details
+
 ## [1.2.6] - 2023-04-19
 ### Changed
 - Notification text for active mode now contains name of emitter that triggered the scan

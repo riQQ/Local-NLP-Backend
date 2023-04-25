@@ -1,0 +1,2 @@
+- Crash fix
+- Small UI changes when viewing nearby emitters and emitter details
