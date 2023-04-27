@@ -97,8 +97,8 @@ class SettingsActivity : PreferenceActivity() {
         prefs.unregisterOnSharedPreferenceChangeListener(listener)
         if (!importExportRunning) // avoid unpausing the backend while database is used
             BackendService.instance?.reloadSettings()
-        if (BackendService.instance == null)
-            Database.instance?.close()
+        // never close database here, this will happen automatically by GC if BackendService
+        // is not running: https://stackoverflow.com/a/35648781
     }
 
     private fun onClickCull() {
@@ -574,7 +574,7 @@ class SettingsActivity : PreferenceActivity() {
                 addView(t)
             })
         }
-        layout.setPadding(30,10,30,10)
+        layout.setPadding(30, 10, 30, 10)
         d = AlertDialog.Builder(this)
             .setTitle(R.string.show_scan_results)
             .setView(ScrollView(this).apply { addView(layout) })

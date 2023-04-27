@@ -7,8 +7,8 @@ android {
         applicationId "helium314.localbackend"
         minSdkVersion 18
         targetSdkVersion 33
-        versionCode 35
-        versionName "1.2.7"
+        versionCode 36
+        versionName "1.2.8"
     }
     buildTypes {
         release {
