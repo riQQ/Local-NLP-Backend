@@ -1,7 +1,7 @@
 package org.fitchfamily.android.dejavu
 
 /*
-*    DejaVu - A location provider backend for microG/UnifiedNlp
+*    Local NLP Backend / DejaVu - A location provider backend for microG/UnifiedNlp
 *
 *    Copyright (C) 2017 Tod Fitch
 *    Copyright (C) 2022 Helium314
@@ -28,7 +28,7 @@ import android.util.Log
  * modified by helium314 in 2022
  */
 /**
- * All access to the database is done through this cache:
+ * All access to the database, except for import/export, is done through this cache:
  *
  * When a RF emitter is seen a get() call is made to the cache. If we have a cache hit
  * the information is directly returned. If we have a cache miss we create a new record
@@ -60,7 +60,7 @@ internal class Cache(context: Context?) {
 
     /**
      * Release all resources associated with the cache. If the cache is
-     * dirty, then it is sync'd to the on flash database.
+     * dirty, then it is synced to the on flash database.
      */
     fun close() {
         synchronized(this) {

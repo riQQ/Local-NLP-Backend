@@ -3,7 +3,7 @@ package org.fitchfamily.android.dejavu
 import org.fitchfamily.android.dejavu.BackendService.Companion.getCorrectedAsu
 
 /*
-*    DejaVu - A location provider backend for microG/UnifiedNlp
+*    Local NLP Backend / DejaVu - A location provider backend for microG/UnifiedNlp
 *
 *    Copyright (C) 2017 Tod Fitch
 *    Copyright (C) 2022 Helium314

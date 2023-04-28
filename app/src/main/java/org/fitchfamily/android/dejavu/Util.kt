@@ -1,7 +1,7 @@
 package org.fitchfamily.android.dejavu
 
 /*
-*    DejaVu - A location provider backend for microG/UnifiedNlp
+*    Local NLP Backend / DejaVu - A location provider backend for microG/UnifiedNlp
 *
 *    Copyright (C) 2017 Tod Fitch
 *    Copyright (C) 2022 Helium314
@@ -53,8 +53,15 @@ private const val MINIMUM_BELIEVABLE_ACCURACY = 15.0F
 // and less than 0.1% difference the small (< 1°) distances we're interested in
 fun approximateDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
     val distLat = (lat1 - lat2)
-    val distLon = (lon1 - lon2) * cos(Math.toRadians(lat1))
+    val meanLatRadians = Math.toRadians((lat1 + lat2) / 2)
+    val distLon = (lon1 - lon2) * approxCos(meanLatRadians)
     return sqrt(distLat * distLat + distLon * distLon) * DEG_TO_METER
+}
+
+// for the short distances we use, approximate cosine is sufficient, and 5-10 times faster
+private fun approxCos(radians: Double): Double {
+    val rSquared = radians * radians // multiplying often is MUCH faster than calling radians.pow (because integers get converted to double)
+    return 1.0 - rSquared / 2 + rSquared * rSquared / 24 - rSquared * rSquared * rSquared / 720
 }
 
 /**

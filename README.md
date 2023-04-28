@@ -5,11 +5,12 @@ This is a backend for [UnifiedNlp](https://github.com/microg/android_packages_ap
 Conceptually, this backend consists of two parts sharing a common database. One part passively monitors the GPS. If the GPS has acquired and has a good position accuracy, then the coverage maps for RF emitters detected by the phone are created and saved.
 
 The other part is the actual location provider which uses the database to estimate location when the GPS is not available.
-
 This backend uses no network data. All data acquired by the phone stays on the phone.
 
-<a href="https://f-droid.org/packages/helium314.localbackend/" target="_blank">
-<img src="https://f-droid.org/badge/get-it-on.png" alt="Get it on F-Droid" height="90"/></a>
+[<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="80">](https://f-droid.org/packages/helium314.localbackend/)
+[<img src="https://user-images.githubusercontent.com/663460/26973090-f8fdc986-4d14-11e7-995a-e7c5e79ed925.png" alt="Download APK from GitHub" height="80">](https://github.com/Helium314/Local-NLP-Backend/releases/latest)
+
+Note that F-Droid and GitHub releases use a different signing key. You cannot switch from one to the other without uninstalling Local NLP Backend first. However, you can always install the debug version (only on GitHub) in addition to the normal version.
 
 See the [changelog](CHANGELOG.md) starting at 1.2.0-beta for a full list of changes starting from last version of *Déjà Vu*.
 
@@ -51,7 +52,7 @@ Alternatively you can enable active mode in the settings available via microG ba
 
 What is stored in the database
 ------------------------------
-For each RF emitter detected an estimate of its coverage area (center and radius) is saved.
+For each RF emitter detected an estimate of its coverage area (center and extents) is saved.
 
 For WLAN/WiFi APs the SSID is also saved for debug purposes. Analysis of the SSIDs detected by the phone can help identify name patterns used on mobile APs. The backend removes records from the database if the RF emitter has a SSID that is associated with WLAN/WiFi APs that are often mobile (e.g. "Joes iPhone").
 
@@ -96,7 +97,7 @@ The icon for this project is derived from:
 GNU General Public License
 --------------------------
 Copyright (C) 2017-18 Tod Fitch
-Copyright (C) 2022 Helium314
+Copyright (C) 2022-23 Helium314
 
 This program is Free Software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
