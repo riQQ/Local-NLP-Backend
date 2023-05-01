@@ -203,7 +203,11 @@ class RfEmitter(val type: EmitterType, val id: String) {
     fun updateLocation(gpsLoc: Location) {
         if (status == EmitterStatus.STATUS_BLACKLISTED) return
         val l = lastObservation ?: return // can't update emitters we haven't seen
-        if (l.suspicious) {
+        val cov = coverage
+        // determine whether emitter will grow to unrealistic size if updated
+        val tooLarge = if (cov != null) approximateDistance(gpsLoc.latitude, gpsLoc.longitude, cov.center_lat, cov.center_lon) > (type.getRfCharacteristics().maximumRange + gpsLoc.accuracy) * 2
+            else false
+        if (l.suspicious && !tooLarge) { // if it will be too large, always update (effectively blacklists this emitter)
             if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because last observation is suspicious")
             return
         }
@@ -224,15 +228,8 @@ class RfEmitter(val type: EmitterType, val id: String) {
         }
 
         // don't update coverage if gps too inaccurate
-        val cov = coverage
-        if (gpsLoc.accuracy > ourCharacteristics.requiredGpsAccuracy
-                // except if distance is really large and we're sure emitter should be out of range
-                //   this allows updating emitters that are found unbelievably far
-                //   from their known location, so they will be blacklisted
-                && (cov == null
-                    || approximateDistance(gpsLoc.latitude, gpsLoc.longitude, cov.center_lat, cov.center_lon)
-                            < (type.getRfCharacteristics().maximumRange + gpsLoc.accuracy) * 2)
-            ) {
+        // except if if emitter would grow too large after updating, in which case we want to blacklist it
+        if (gpsLoc.accuracy > ourCharacteristics.requiredGpsAccuracy && !tooLarge) {
             if (DEBUG) Log.d(TAG, "updateLocation($logString) - No update because location inaccurate. accuracy ${gpsLoc.accuracy}, required ${ourCharacteristics.requiredGpsAccuracy}")
             return
         }
