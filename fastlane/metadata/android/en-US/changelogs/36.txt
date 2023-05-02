@@ -1,0 +1,2 @@
+- Handle geo uris: allows adding emitters as if a GPS location was received at the indicated location
+- Improved blacklisting of unbelievably large emitters

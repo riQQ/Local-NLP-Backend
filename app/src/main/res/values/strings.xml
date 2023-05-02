@@ -73,5 +73,10 @@ Current setting: %s
 
     <!-- other -->
     <string name="background_location_permission_toast">Please enable Local NLP Backend again so it may ask for background location permission</string>
+    <string name="handle_geo_uri_message">
+        Scan and insert emitters into database at this location?\n
+        latitude: %1$.5f\n
+        longitude: %2$.5f
+    </string>
 
 </resources>

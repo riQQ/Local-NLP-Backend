@@ -1015,6 +1015,20 @@ class BackendService : LocationBackendService() {
             instance?.onGpsChanged(locReport)
         }
 
+        /**
+         * Called if a valid geo uri intent containing latitude and longitude is received.
+         * The location is treated like GPS location with accuracy 0.
+         */
+        fun geoUriLocationProvided(latitude: Double, longitude: Double) {
+            Log.d(TAG, "handleExternalLocation() - accepting location provided via geoUri intent")
+            val loc = Location("external")
+            loc.latitude = latitude
+            loc.longitude = longitude
+            loc.accuracy = 0f
+            loc.elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+            instance?.onGpsChanged(loc)
+        }
+
         /** Clears the emitter cache. Necessary if changes to database were made no through cache */
         fun resetCache() = instance?.emitterCache?.clear()
 

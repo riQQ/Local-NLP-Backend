@@ -17,12 +17,13 @@ See the [changelog](CHANGELOG.md) starting at 1.2.0-beta for a full list of chan
 How to use
 ==========
 Local NLP Backend can be used like *Déjà Vu*: just enable the backend and let it build up the database by frequently having GPS enabled, e.g. using a map app.
-If you have a *Déjà Vu* database (you'll need root privileged to extract it), it can be imported in LocalNLP. Further import options are databases exported by LocalNLP, and cell csv files from MLS or OpenCelliD.
-Note that the local database needs to be filled either using GPS or by importing data, before LocalNLP can provide locations!
+If you have a *Déjà Vu* database (you'll need root privileged to extract it), it can be imported in Local NLP Backend. Further import options are databases exported by Local NLP Backend, and cell csv files from MLS or OpenCelliD.
+Note that the local database needs to be filled either using GPS or by importing data, before Local NLP Backend can provide locations!
 
-In order to speed up building the database, LocalNLP has an optional active mode that enabled GPS when there is no known emitter nearby (low setting) or when any unknown emitter is found (aggressive setting).
+In order to speed up building the database, Local NLP Backend has an optional active mode that enabled GPS when there is no known emitter nearby (low setting) or when any unknown emitter is found (aggressive setting).
+If you have bad GPS signal at a location, you can share a location using geo uri to Local NLP Backend, e.g. using OSMAnd share -> "geo:" or StreetComplete "open location in another app". This will cause Local NLP Backend to act as if a GPS location was received it the indicated location, and allows you to manually build a database even without GPS.
 
-On [some Android versions](https://developer.android.com/guide/topics/connectivity/wifi-scan#wifi-scan-throttling), the ability to perform WiFi scans is severely limited. LocalNLP does not have control over this, and is limited by the specified background app limit.
+On [some Android versions](https://developer.android.com/guide/topics/connectivity/wifi-scan#wifi-scan-throttling), the ability to perform WiFi scans is severely limited. Local NLP Backend does not have control over this, and is limited by the specified background app limit.
 
 Potential improvements not yet implemented
 ======================
