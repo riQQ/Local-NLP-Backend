@@ -34,6 +34,7 @@ class HandleGeoUriActivity: Activity() {
             .setTitle(R.string.app_name)
             .setMessage(getString(R.string.handle_geo_uri_message, latitude, longitude))
             .setNegativeButton(android.R.string.cancel) { _, _ -> finish() }
+            .setOnCancelListener { finish() }
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 BackendService.geoUriLocationProvided(latitude, longitude)
                 finish()
