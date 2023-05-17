@@ -324,9 +324,9 @@ class BackendService : LocationBackendService() {
      * @param update The current GPS reported location
      */
     @Synchronized
-    private fun onGpsChanged(update: Location) {
+    private fun onLocationChanged(update: Location) {
         if (permissionsOkay && notNullIsland(update)) {
-            if (DEBUG) Log.d(TAG, "onGpsChanged() - accuracy ${update.accuracy}")
+            if (DEBUG) Log.d(TAG, "onLocationChanged() - ${update.provider}, accuracy ${update.accuracy}")
             lastGpsOfThisPeriod = update
             if (useKalman)
                 kalmanGpsLocation?.update(update) ?: run { kalmanGpsLocation = Kalman(update, GPS_COORDINATE_NOISE) }
@@ -339,7 +339,7 @@ class BackendService : LocationBackendService() {
                 if (DEBUG) Log.d(TAG, "onGpsChanged() - updating old emitters")
                 updateEmitters(oldEmitters.mapNotNull { emitterCache?.get(it) }, location)
             }
-            scanAllSensors()
+            scanAllSensors(update)
         } else
             Log.d(TAG, "onGpsChanged() - Permissions not granted or location invalid, soft fail.")
     }
@@ -347,9 +347,10 @@ class BackendService : LocationBackendService() {
     /**
      * Kick off new scans for all the sensor types we know about. Typically scans
      * should occur asynchronously so we don't hang up our caller's thread.
+     * if a [location] is provided, WiFi scan is only started if accucacy is sufficient
      */
     @Synchronized
-    private fun scanAllSensors() {
+    private fun scanAllSensors(location: Location? = null) {
         if (emitterCache == null) {
             if (instance == null) { // this should not be necessary, but better make sure
                 if (DEBUG) Log.d(TAG, "scanAllSensors() - instance is null")
@@ -360,7 +361,7 @@ class BackendService : LocationBackendService() {
         }
 
         if (DEBUG) Log.d(TAG, "scanAllSensors() - starting scans")
-        val wifiScanStarted = startWiFiScan()
+        val wifiScanStarted = (location?.accuracy ?: 0f) < shortRangeMinAccuracy && startWiFiScan()
         val mobileScanStarted = startMobileScan()
         if (wifiScanStarted || mobileScanStarted)
             startProcessingPeriodIfNecessary() // only try starting new period if a scan was started
@@ -1012,7 +1013,7 @@ class BackendService : LocationBackendService() {
          */
         fun instanceGpsLocationUpdated(locReport: Location) {
             //Log.d(TAG, "instanceGpsLocationUpdated() entry.");
-            instance?.onGpsChanged(locReport)
+            instance?.onLocationChanged(locReport)
         }
 
         /**
@@ -1021,12 +1022,12 @@ class BackendService : LocationBackendService() {
          */
         fun geoUriLocationProvided(latitude: Double, longitude: Double) {
             Log.d(TAG, "handleExternalLocation() - accepting location provided via geoUri intent")
-            val loc = Location("external")
+            val loc = Location("geoUri")
             loc.latitude = latitude
             loc.longitude = longitude
             loc.accuracy = 0f
             loc.elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
-            instance?.onGpsChanged(loc)
+            instance?.onLocationChanged(loc)
         }
 
         /** Clears the emitter cache. Necessary if changes to database were made no through cache */
@@ -1115,3 +1116,5 @@ private val wifiBroadcastFilter = IntentFilter(WifiManager.SCAN_RESULTS_AVAILABL
 
 // shorter name because it's checked often
 private const val intMax = Int.MAX_VALUE
+
+private val shortRangeMinAccuracy = shortRangeEmitterTypes.maxOf { it.getRfCharacteristics().requiredGpsAccuracy }
