@@ -1,0 +1,2 @@
+- Extended blacklist (thanks to Sorunome)
+- Avoid searching nearby WiFis if GPS accuracy isn't good enough

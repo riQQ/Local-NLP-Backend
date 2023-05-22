@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Removed
 - Not applicable
 
+## [1.2.10] - 2023-05-22
+### Changed
+- Extended blacklist (thanks to Sorunome)
+- Avoid searching nearby WiFis if GPS accuracy isn't good enough
+
 ## [1.2.9] - 2023-05-03
 ### Added
 - Handle geo uris: allows adding emitters as if a GPS location was received at the indicated location
