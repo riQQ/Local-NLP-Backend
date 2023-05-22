@@ -399,7 +399,9 @@ private val blacklistWords = hashSetOf(
 private val blacklistEquals = hashSetOf(
     "amtrak", "amtrakconnect", "cdwifi", "megabus", "westlan","wifi in de trein",
     "svciob", "oebb", "oebb-postbus", "dpmbfree", "telekom_ice", "db ic bus",
-    "gkbgast", // transport
+    "gkbgast", "mavstart-wifi", "wifionice", "wifi@db", "crosscountrywifi",
+    "gwr wifi", "thalysnet", "_sncf_wifi_inoui", "_sncf_wifi_intercities",
+    "normandietrainconnecte", "keolis nederland", "ouifi" // transport
 )
 // and arrays if we just want to iterate
 private val blacklistStartsWith = arrayOf(
