@@ -1,3 +1,7 @@
+Note that microG has stopped supporting UnifiedNlp backends with 0.2.28.
+
+If you still want to use this backend (or others), you need to use older microG versions. This can only be recommended you use microG __for location only__. (Personally I use 0.2.10, as with later versions location backends stop working after some time)
+
 Local NLP Backend - A Déjà Vu Fork
 ==================================
 This is a backend for [UnifiedNlp](https://github.com/microg/android_packages_apps_UnifiedNlp) that uses locally acquired WLAN/WiFi AP and mobile/cellular tower data to resolve user location. Collectively, “WLAN/WiFi and mobile/cellular” signals will be called “RF emitters” below.
