@@ -321,6 +321,7 @@ class SettingsActivity : PreferenceActivity() {
                     reader.readLine() // skip the header line, as it's not used
                     4
                 }
+                parseLine(firstLine, 0, emptySet(), null) != null -> 0 // MLS, but without header
                 else -> {
                     Toast.makeText(this, R.string.import_error_format, Toast.LENGTH_LONG).show()
                     return
