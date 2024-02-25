@@ -10,6 +10,7 @@ android {
         versionCode 39
         versionName "1.2.11"
     }
+
     buildTypes {
         release {
             shrinkResources true
@@ -20,16 +21,31 @@ android {
             applicationIdSuffix = ".debug"
         }
     }
+
+    buildFeatures {
+        buildConfig true
+    }
+
     lintOptions {
         disable 'MissingTranslation'
     }
+
     namespace "org.fitchfamily.android.dejavu"
     archivesBaseName = "local-nlp-backend_" + defaultConfig.versionName
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17.toString()
+    }
 }
 
 dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.localbroadcastmanager:localbroadcastmanager:1.1.0'
     implementation 'org.microg.nlp:api:2.0-alpha10'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.4'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
 }
