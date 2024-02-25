@@ -1,6 +1,8 @@
 Note that microG has stopped supporting UnifiedNlp backends with 0.2.28.
 
-If you still want to use this backend (or others), you need to use older microG versions. This can only be recommended you use microG __for location only__. (Personally I use 0.2.10, as with later versions location backends stop working after some time)
+If you still want to use this backend (or others), you need to use older microG versions. This can only be recommended of you use microG __for location only__.
+
+Personally I use [0.2.10](https://github.com/microg/GmsCore/releases/tag/v0.2.10.19420), as with later versions location backends stop providing locations after some time.
 
 Local NLP Backend - A Déjà Vu Fork
 ==================================
